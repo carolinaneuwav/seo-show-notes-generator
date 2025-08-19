@@ -10,7 +10,7 @@ channel = "stable-24_11"
 packages = ["imagemagick_light"]
 
 [deployment]
-run = ["node", "index.js"]
+run = ["sh", "-c", "node backend/server.js"]
 deploymentTarget = "autoscale"
 ignorePorts = false
 
