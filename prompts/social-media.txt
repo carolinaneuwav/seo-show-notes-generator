@@ -1,0 +1,12 @@
+
+Create social media content from this transcript for English-speaking indie creators:
+
+1. Instagram caption (150 chars) + 5 trending hashtags
+2. Twitter thread (3 tweets, 280 chars each)
+3. LinkedIn post (professional tone, 200 chars)
+4. YouTube description (SEO optimized, 300 chars)
+
+Tone: {tone} | Focus: English-speaking creators
+Make content engaging and shareable for indie podcasters/YouTubers.
+
+Transcript: {transcript}

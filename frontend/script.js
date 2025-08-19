@@ -28,6 +28,7 @@ async function generateShowNotes() {
 
   const transcript = document.getElementById('transcript').value;
   const tone = document.getElementById('tone').value || 'casual';
+  const contentType = document.getElementById('contentType').value || 'show-notes';
   const generateButton = document.getElementById('generateBtn');
   const outputDiv = document.getElementById('output');
 
@@ -59,7 +60,8 @@ async function generateShowNotes() {
       },
       body: JSON.stringify({ 
         transcript: transcript,
-        tone: tone 
+        tone: tone,
+        contentType: contentType
       })
     });
 
