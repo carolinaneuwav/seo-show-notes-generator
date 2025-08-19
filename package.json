@@ -1,4 +1,3 @@
-
 {
   "name": "seo-show-notes-generator",
   "version": "1.0.0",
@@ -8,10 +7,9 @@
     "dev": "node index.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
     "cors": "^2.8.5",
-    "dotenv": "^16.3.1"
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "openai": "^5.12.2"
   }
 }
-
-

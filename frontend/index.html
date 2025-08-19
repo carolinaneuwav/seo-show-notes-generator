@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SEO Show Notes Generator - MVP</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        textarea { width: 100%; height: 200px; margin: 10px 0; }
+        button { padding: 10px 20px; background: #007bff; color: white; border: none; cursor: pointer; }
+        button:disabled { background: #ccc; }
+        #output { border: 1px solid #ddd; padding: 15px; margin-top: 20px; min-height: 100px; }
+        .error { color: red; }
+        .result { color: green; }
+    </style>
+</head>
+<body>
+    <h1>🚀 SEO Show Notes Generator MVP</h1>
+
+    <div>
+        <label for="transcript">Paste your transcript here:</label>
+        <textarea id="transcript" placeholder="Paste your podcast or video transcript here..."></textarea>
+    </div>
+
+    <div>
+        <label for="tone">Tone (optional):</label>
+        <select id="tone">
+            <option value="casual">Casual</option>
+            <option value="formal">Formal</option>
+            <option value="witty">Witty</option>
+        </select>
+    </div>
+
+    <button id="generateBtn" onclick="generateShowNotes()">Generate Show Notes</button>
+  <button onclick="testConnection()">🔍 Test Connection</button>
+  <button onclick="loadSample()">📝 Load Sample</button>
+  <button id="generateBtn" onclick="generateShowNotes()">Generate Show Notes</button>
+
+    <div id="output">
+        <p>👆 Click "Generate Show Notes" to see the magic happen!</p>
+    </div>
+  
+    <script src="script.js"></script>
+</body>
+</html>
+
