@@ -119,7 +119,7 @@ Make it engaging and optimized for search engines while maintaining the ${tone} 
     if (error.code === 'insufficient_quota') {
       return res.status(429).json({ 
         success: false, 
-        error: 'OpenAI quota exceeded. Please check your OpenAI account billing.' 
+        error: 'OpenAI quota exceeded. Please add billing to your OpenAI account at https://platform.openai.com/account/billing or try a new OpenAI account with free credits.' 
       });
     }
 
