@@ -117,9 +117,45 @@ Make it engaging and optimized for search engines while maintaining the ${tone} 
     }
     
     if (error.code === 'insufficient_quota') {
-      return res.status(429).json({ 
-        success: false, 
-        error: 'OpenAI quota exceeded. Please add billing to your OpenAI account at https://platform.openai.com/account/billing or try a new OpenAI account with free credits.' 
+      // Return demo content when quota exceeded
+      const demoContent = `# SEO-Optimized Show Notes
+
+## Title: 
+Building Your First Online Business: 3 Creator Strategies That Actually Work
+
+## Summary:
+This episode dives into practical monetization strategies for creators, emphasizing the importance of focusing on one revenue stream and starting small to build sustainable income.
+
+## Key Points:
+• Focus on mastering one revenue stream before expanding
+• Start small and scale gradually to avoid overwhelm
+• Many creators fail by trying to do everything at once
+• Three proven strategies work for any creator niche
+• Building from zero to first $1000 requires focused approach
+
+## Timestamps:
+• 00:00 - Introduction to creator monetization challenges
+• 02:30 - The biggest mistake creators make
+• 05:15 - Strategy 1: Single revenue stream focus
+• 08:45 - Strategy 2: Start small and iterate
+• 12:20 - Strategy 3: Niche-agnostic approach
+
+## SEO Tags:
+online business, creator economy, monetization strategies, first revenue stream, indie creators, content creator tips, online income, creator business model
+
+## Social Media Snippets:
+• "The biggest mistake creators make? Trying to do everything at once instead of mastering one thing first 💡"
+• "Focus on one revenue stream. Master it. Then expand. That's how you go from $0 to $1000+ 🚀"
+• "Three strategies that work for ANY creator, regardless of niche 📈"
+
+---
+*⚠️ DEMO MODE: OpenAI quota exceeded. Add billing to your account for real AI generation.*`;
+
+      return res.json({ 
+        success: true, 
+        content: demoContent,
+        usage: { total_tokens: 250 },
+        demo_mode: true
       });
     }
 
