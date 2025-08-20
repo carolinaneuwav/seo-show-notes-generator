@@ -37,3 +37,93 @@ button:hover {
   background: #fff;
   border: 1px solid #ccc;
 }
+
+/* Enhanced Usage Tracking UI Styles */
+.usage-display {
+  background: #e8f5e8;
+  border: 2px solid #27ae60;
+  border-radius: 10px;
+  padding: 15px;
+  text-align: center;
+  margin: 20px 0;
+  font-weight: bold;
+  color: #27ae60;
+}
+
+.usage-display.warning {
+  background: #fff3cd;
+  border-color: #f39c12;
+  color: #856404;
+}
+
+.usage-display.premium {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+}
+
+.upgrade-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: white;
+  padding: 40px;
+  border-radius: 20px;
+  max-width: 500px;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
+
+.upgrade-btn {
+  background: linear-gradient(135deg, #27ae60, #2ecc71);
+  color: white;
+  border: none;
+  padding: 15px 30px;
+  border-radius: 25px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  margin: 20px 0;
+  transition: all 0.3s ease;
+}
+
+.upgrade-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px rgba(39, 174, 96, 0.4);
+}
+
+.close-btn {
+  background: none;
+  border: 2px solid #bdc3c7;
+  color: #7f8c8d;
+  padding: 10px 20px;
+  border-radius: 20px;
+  cursor: pointer;
+  margin-top: 15px;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 8px;
+  background: #ecf0f1;
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 10px 0;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #27ae60, #2ecc71);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
