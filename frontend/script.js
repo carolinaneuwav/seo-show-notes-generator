@@ -82,8 +82,119 @@ class UsageTracker {
   }
 }
 
+// Export functionality
+class ShowNotesExporter {
+  constructor() {
+    this.addExportButtons();
+  }
+
+  addExportButtons() {
+    const exportHTML = `
+      <div class="export-section">
+        <h4>📥 Export Your Show Notes</h4>
+        <div class="export-buttons">
+          <button class="export-btn" onclick="showNotesExporter.exportTXT()">📄 Download TXT</button>
+          <button class="export-btn" onclick="showNotesExporter.exportMarkdown()">📝 Download Markdown</button>
+          <button class="export-btn" onclick="showNotesExporter.exportPDF()">📋 Download PDF</button>
+        </div>
+      </div>
+    `;
+
+    // Listen for when results are generated
+    document.addEventListener('results-generated', () => {
+      const outputDiv = document.getElementById('output');
+      if (outputDiv && !outputDiv.querySelector('.export-section')) {
+        outputDiv.insertAdjacentHTML('beforeend', exportHTML);
+      }
+    });
+  }
+
+  getShowNotesContent() {
+    const outputDiv = document.getElementById('output');
+    const preElement = outputDiv?.querySelector('pre');
+    return preElement ? preElement.textContent : '';
+  }
+
+  downloadFile(content, filename, mimeType) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  }
+
+  exportTXT() {
+    const showNotes = this.getShowNotesContent();
+    if (!showNotes) {
+      alert('No show notes to export. Generate some first!');
+      return;
+    }
+    this.downloadFile(showNotes, 'show-notes.txt', 'text/plain');
+    
+    if (typeof gtag !== 'undefined') {
+      gtag('event', 'export_downloaded', { 'format': 'txt' });
+    }
+  }
+
+  exportMarkdown() {
+    const showNotes = this.getShowNotesContent();
+    if (!showNotes) {
+      alert('No show notes to export. Generate some first!');
+      return;
+    }
+    this.downloadFile(showNotes, 'show-notes.md', 'text/markdown');
+    
+    if (typeof gtag !== 'undefined') {
+      gtag('event', 'export_downloaded', { 'format': 'markdown' });
+    }
+  }
+
+  exportPDF() {
+    const showNotes = this.getShowNotesContent();
+    if (!showNotes) {
+      alert('No show notes to export. Generate some first!');
+      return;
+    }
+
+    // Create a new window with the show notes content for printing
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Show Notes</title>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; margin: 40px; }
+          pre { white-space: pre-wrap; font-family: inherit; }
+          h1, h2, h3 { color: #333; }
+        </style>
+      </head>
+      <body>
+        <pre>${showNotes}</pre>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+    
+    // Wait for content to load, then trigger print dialog
+    setTimeout(() => {
+      printWindow.print();
+      printWindow.close();
+    }, 250);
+
+    if (typeof gtag !== 'undefined') {
+      gtag('event', 'export_downloaded', { 'format': 'pdf' });
+    }
+  }
+}
+
 // Initialize usage tracker
 const usageTracker = new UsageTracker();
+const showNotesExporter = new ShowNotesExporter();
 
 // Update usage display
 function updateUsageDisplay(usage) {
@@ -201,6 +312,9 @@ async function generateShowNotes() {
           <small style="color: #666;">Tokens used: ${data.usage?.total_tokens || 'N/A'}</small>
         </div>
       `;
+
+      // Trigger event for export buttons
+      document.dispatchEvent(new Event('results-generated'));
     } else {
       throw new Error(data.error || 'Unknown error occurred');
     }
