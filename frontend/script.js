@@ -233,3 +233,4 @@ function loadSample() {
 document.addEventListener('DOMContentLoaded', function() {
   updateUsageDisplay(usageTracker.getUsage());
 });
+
