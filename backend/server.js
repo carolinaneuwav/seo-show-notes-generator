@@ -234,3 +234,32 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (err) => {
   console.error('Unhandled Rejection:', err);
 });
+
+// server.js
+import express from "express";
+import cors from "cors";
+
+const app = express();
+app.use(cors()); // Allow requests from your frontend (Vercel)
+app.use(express.json());
+
+// Test route
+app.get("/", (req, res) => {
+  res.send("✅ Backend is running!");
+});
+
+// Main generation route
+app.post("/generate", (req, res) => {
+  const { transcript, tone, contentType } = req.body;
+
+  // For now just return a fake result
+  res.json({
+    result: `✨ [Demo] Generated ${contentType} in ${tone} tone for transcript: "${transcript.substring(0, 60)}..."`
+  });
+});
+
+// Use Replit's PORT or 3000 locally
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
