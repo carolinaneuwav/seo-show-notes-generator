@@ -233,3 +233,117 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (err) => {
   console.error('Unhandled Rejection:', err);
 });
+const express = require('express');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+
+const app = express();
+
+// Middleware
+app.use(express.json());
+app.use(express.static('frontend'));
+
+/**
+ * Create checkout session endpoint
+ * Creates a new Stripe checkout session for subscription payment
+ */
+app.post('/create-checkout-session', async (req, res) => {
+  try {
+    const { priceId, planName } = req.body;
+
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price: priceId,
+          quantity: 1,
+        },
+      ],
+      mode: 'subscription',
+      success_url: 'https://yourdomain.com/success?session_id={CHECKOUT_SESSION_ID}',
+      cancel_url: 'https://yourdomain.com/cancel',
+      metadata: {
+        plan_name: planName
+      }
+    });
+
+    res.json({ url: session.url });
+
+  } catch (error) {
+    console.error('Error creating checkout session:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Verify subscription status endpoint
+ * Verifies if a subscription payment was successful
+ */
+app.post('/verify-subscription', async (req, res) => {
+  try {
+    const { sessionId } = req.body;
+
+    // Retrieve the checkout session
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+    if (session.payment_status === 'paid') {
+      // Get subscription details
+      const subscription = await stripe.subscriptions.retrieve(session.subscription);
+
+      res.json({
+        success: true,
+        subscription: {
+          id: subscription.id,
+          status: subscription.status,
+          plan: session.metadata.plan_name,
+          current_period_end: subscription.current_period_end
+        }
+      });
+    } else {
+      res.json({
+        success: false,
+        message: 'Payment not completed'
+      });
+    }
+
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Webhook endpoint for Stripe events
+ * Handles real-time notifications from Stripe about subscription changes
+ */
+app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  let event;
+
+  try {
+    // Verify webhook signature
+    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+  } catch (err) {
+    console.log('Webhook signature verification failed.', err.message);
+    return res.status(400).send('Webhook signature verification failed.');
+  }
+
+  // Handle different event types
+  switch (event.type) {
+    case 'customer.subscription.created':
+      console.log('New subscription created:', event.data.object);
+      break;
+
+    case 'customer.subscription.deleted':
+      console.log('Subscription cancelled:', event.data.object);
+      break;
+
+    default:
+      console.log('Unhandled event type:', event.type);
+  }
+
+  res.json({ received: true });
+});
+
+// Start server
+app.listen(3000, () => {
+  console.log('Server running on port 3000');
+});

@@ -1,0 +1,197 @@
+<script>
+// ==========================
+// Usage tracking system
+// ==========================
+class UsageTracker {
+  constructor() {
+    this.storageKey = 'showNotesUsage';
+    this.freeLimit = 5; // 5 free generations per month
+  }
+
+  getCurrentUsage() {
+    const usage = localStorage.getItem(this.storageKey);
+    if (!usage) {
+      return {
+        count: 0,
+        month: new Date().getMonth(),
+        year: new Date().getFullYear()
+      };
+    }
+    return JSON.parse(usage);
+  }
+
+  incrementUsage() {
+    const currentMonth = new Date().getMonth();
+    const currentYear = new Date().getFullYear();
+    let usage = this.getCurrentUsage();
+
+    // Reset if new month
+    if (usage.month !== currentMonth || usage.year !== currentYear) {
+      usage = {
+        count: 0,
+        month: currentMonth,
+        year: currentYear
+      };
+    }
+
+    usage.count++;
+    localStorage.setItem(this.storageKey, JSON.stringify(usage));
+    return usage;
+  }
+
+  canGenerate() {
+    const usage = this.getCurrentUsage();
+    const isSubscribed = this.isUserSubscribed();
+    return isSubscribed || usage.count < this.freeLimit;
+  }
+
+  getRemainingGenerations() {
+    const usage = this.getCurrentUsage();
+    return Math.max(0, this.freeLimit - usage.count);
+  }
+
+  isUserSubscribed() {
+    const subscription = localStorage.getItem('userSubscription');
+    if (!subscription) return false;
+    
+    const subData = JSON.parse(subscription);
+    return subData.status === 'active' && subData.current_period_end > Date.now() / 1000;
+  }
+}
+
+// Initialize usage tracker
+const usageTracker = new UsageTracker();
+
+// ==========================
+// Main generation function
+// ==========================
+function generateShowNotes() {
+  if (!usageTracker.canGenerate()) {
+    showUpgradeModal();
+    return;
+  }
+
+  // 👉 Your API call to generate show notes goes here
+  console.log('Generating show notes...');
+
+  // After success:
+  usageTracker.incrementUsage();
+  updateUsageDisplay();
+}
+
+// ==========================
+// UI Updates
+// ==========================
+function updateUsageDisplay() {
+  const remaining = usageTracker.getRemainingGenerations();
+  const isSubscribed = usageTracker.isUserSubscribed();
+  
+  const statusElement = document.getElementById('usage-status');
+  if (statusElement) {
+    if (isSubscribed) {
+      statusElement.innerHTML = '✨ Pro subscriber - unlimited generations';
+    } else {
+      statusElement.innerHTML = `${remaining} free generations remaining this month`;
+    }
+  }
+}
+
+// ==========================
+// Upgrade Modal
+// ==========================
+function showUpgradeModal() {
+  closeModal();
+  
+  const modal = document.createElement('div');
+  modal.className = 'upgrade-modal';
+  modal.innerHTML = `
+    <div class="modal-overlay" onclick="closeModal()"></div>
+    <div class="modal-content">
+      <h3>Upgrade to Continue</h3>
+      <p>You've used all 5 free show notes this month. Upgrade to continue creating amazing content!</p>
+      <div class="modal-buttons">
+        <button onclick="subscribeTo('creator')" class="btn-primary">
+          Creator Plan - €9/month
+        </button>
+        <button onclick="subscribeTo('pro')" class="btn-secondary">
+          Pro Plan - €15/month
+        </button>
+        <button onclick="closeModal()" class="btn-cancel">
+          Maybe Later
+        </button>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(modal);
+}
+
+function closeModal() {
+  const modal = document.querySelector('.upgrade-modal');
+  if (modal) modal.remove();
+}
+
+// ==========================
+// Stripe Subscriptions
+// ==========================
+async function subscribeTo(plan) {
+  const priceIds = {
+    creator: 'price_creator_plan_id', // 🔑 replace with real Stripe price IDs
+    pro: 'price_pro_plan_id'
+  };
+  
+  try {
+    const response = await fetch('/create-checkout-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        priceId: priceIds[plan],
+        planName: plan.charAt(0).toUpperCase() + plan.slice(1) + ' Plan'
+      }),
+    });
+    
+    const data = await response.json();
+    if (data.url) {
+      window.location.href = data.url; // Redirect to Stripe Checkout
+    }
+  } catch (error) {
+    console.error('Error creating checkout session:', error);
+    alert('Something went wrong. Please try again.');
+  }
+}
+
+// ==========================
+// Subscription Verification
+// ==========================
+async function verifySubscription(sessionId) {
+  try {
+    const response = await fetch('/verify-subscription', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId }),
+    });
+    
+    const data = await response.json();
+    if (data.success) {
+      localStorage.setItem('userSubscription', JSON.stringify(data.subscription));
+      updateUsageDisplay();
+      alert('Subscription activated! You now have unlimited generations.');
+    }
+  } catch (error) {
+    console.error('Error verifying subscription:', error);
+  }
+}
+
+// ==========================
+// Init on page load
+// ==========================
+document.addEventListener('DOMContentLoaded', function() {
+  updateUsageDisplay();
+
+  const urlParams = new URLSearchParams(window.location.search);
+  const sessionId = urlParams.get('session_id');
+  if (sessionId) {
+    verifySubscription(sessionId);
+  }
+});
+</script>
