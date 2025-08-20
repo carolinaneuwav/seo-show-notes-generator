@@ -4,6 +4,7 @@ console.log("🚀 Script loaded successfully!");
 // Configuration
 const API_URL = "https://7de06961-fb38-46ac-b5c3-4706b659d4e6-00-153eza3xvs88e.worf.replit.dev";
 
+
 // ==========================
 // Usage tracking system
 // ==========================
