@@ -1,7 +1,5 @@
-// Add this at the very top
 const API_URL = "https://7de06961-fb38-46ac-b5c3-4706b659d4e6-00-153eza3xvs88e.worf.replit.dev";
 
-// frontend/script.js - WITH USAGE TRACKING
 console.log("🚀 Script loaded successfully!");
 
 // Usage Tracker Class
@@ -31,7 +29,6 @@ class UsageTracker {
     usage.count += 1;
     localStorage.setItem(this.storageKey, JSON.stringify(usage));
 
-    // Track milestone with Google Analytics
     if (typeof gtag !== "undefined") {
       gtag("event", "usage_milestone", {
         generation_count: usage.count,
@@ -58,31 +55,21 @@ class UsageTracker {
   }
 
   displayUpgradeModal() {
-    const modal = document.createElement("div");
-    modal.className = "upgrade-modal";
-    modal.innerHTML = `
-      <div class="upgrade-content">
-        <h3>🚀 Ready to unlock unlimited show notes?</h3>
-        <p>You've used all 5 free generations!</p>
-        <div class="upgrade-options">
-          <button class="upgrade-btn" onclick="window.open('mailto:upgrade@yourapp.com?subject=Creator Plan Upgrade', '_blank')">
-            Upgrade to Creator Plan - €9/month
+    const modalHTML = `
+      <div class="upgrade-modal">
+        <div class="modal-content">
+          <h2>🚀 Upgrade to Premium</h2>
+          <p>You've used all your free generations! Upgrade for unlimited access.</p>
+          <button class="upgrade-btn" onclick="window.open('https://your-payment-link.com', '_blank')">
+            Upgrade Now - $9/month
           </button>
-          <button class="maybe-later-btn" onclick="this.closest('.upgrade-modal').remove()">
+          <button class="close-btn" onclick="this.closest('.upgrade-modal').remove()">
             Maybe Later
           </button>
         </div>
       </div>
     `;
-
-    document.body.appendChild(modal);
-
-    // Track upgrade prompt shown
-    if (typeof gtag !== "undefined") {
-      gtag("event", "upgrade_prompt_shown", {
-        trigger: "limit_reached",
-      });
-    }
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
   }
 }
 
@@ -104,7 +91,6 @@ class ShowNotesExporter {
       </div>
     `;
 
-    // Listen for when results are generated
     document.addEventListener("results-generated", () => {
       const outputDiv = document.getElementById("output");
       if (outputDiv && !outputDiv.querySelector(".export-section")) {
@@ -118,7 +104,6 @@ class ShowNotesExporter {
     const preElement = outputDiv?.querySelector("pre");
     return preElement ? preElement.textContent : "";
   }
-  
 
   downloadFile(content, filename, mimeType) {
     const blob = new Blob([content], { type: mimeType });
@@ -134,123 +119,47 @@ class ShowNotesExporter {
 
   exportTXT() {
     const showNotes = this.getShowNotesContent();
-    if (!showNotes) {
-      alert("No show notes to export. Generate some first!");
-      return;
-    }
-    this.downloadFile(showNotes, "show-notes.txt", "text/plain");
-
+    this.downloadFile(showNotes, 'show-notes.txt', 'text/plain');
     if (typeof gtag !== "undefined") {
-      gtag("event", "export_downloaded", { format: "txt" });
+      gtag('event', 'export_downloaded', { 'format': 'txt' });
     }
   }
 
   exportMarkdown() {
     const showNotes = this.getShowNotesContent();
-    if (!showNotes) {
-      alert("No show notes to export. Generate some first!");
-      return;
-    }
-    this.downloadFile(showNotes, "show-notes.md", "text/markdown");
-
+    this.downloadFile(showNotes, 'show-notes.md', 'text/markdown');
     if (typeof gtag !== "undefined") {
-      gtag("event", "export_downloaded", { format: "markdown" });
+      gtag('event', 'export_downloaded', { 'format': 'markdown' });
     }
   }
 
   exportPDF() {
+    const printWindow = window.open('', '_blank');
     const showNotes = this.getShowNotesContent();
-    if (!showNotes) {
-      alert("No show notes to export. Generate some first!");
-      return;
-    }
-
-    // Create a new window with the show notes content for printing
-    const printWindow = window.open("", "_blank");
     printWindow.document.write(`
-      <!DOCTYPE html>
       <html>
-      <head>
-        <title>Show Notes</title>
-        <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; margin: 40px; }
-          pre { white-space: pre-wrap; font-family: inherit; }
-          h1, h2, h3 { color: #333; }
-        </style>
-      </head>
-      <body>
-        <pre>${showNotes}</pre>
-      </body>
+        <head><title>Show Notes</title></head>
+        <body style="font-family: Arial, sans-serif; padding: 20px;">
+          <pre style="white-space: pre-wrap;">${showNotes}</pre>
+        </body>
       </html>
     `);
     printWindow.document.close();
-
-    // Wait for content to load, then trigger print dialog
-    setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-    }, 250);
-
+    printWindow.print();
     if (typeof gtag !== "undefined") {
-      gtag("event", "export_downloaded", { format: "pdf" });
+      gtag('event', 'export_downloaded', { 'format': 'pdf' });
     }
   }
 }
 
-// Initialize usage tracker
+// Initialize classes
 const usageTracker = new UsageTracker();
 const showNotesExporter = new ShowNotesExporter();
 
-// Update usage display
-function updateUsageDisplay(usage) {
-  const remaining = usageTracker.getRemainingGenerations();
-  let usageEl = document.getElementById("usage-display");
-
-  if (!usageEl) {
-    usageEl = document.createElement("div");
-    usageEl.id = "usage-display";
-    usageEl.className = "usage-display";
-
-    // Insert before the generate button
-    const generateBtn = document.getElementById("generateBtn");
-    generateBtn.parentNode.insertBefore(usageEl, generateBtn);
-  }
-
-  if (usage.isPaid) {
-    usageEl.innerHTML = "✨ Unlimited generations";
-    usageEl.className = "usage-display premium";
-  } else {
-    usageEl.innerHTML = `${remaining} free generations remaining`;
-    usageEl.className =
-      remaining <= 2 ? "usage-display warning" : "usage-display";
-  }
-}
-
-// Test function to check if everything is connected
-async function testConnection() {
-  try {
-    console.log("Testing server connection...");
-    const response = await fetch(`${API_URL}/api/test`);
-    console.log("Response received:", response);
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const data = await response.json();
-    console.log("Test successful:", data);
-    alert("✅ Server connection works!");
-  } catch (error) {
-    console.error("Test failed:", error);
-    alert("❌ Server connection failed: " + error.message);
-  }
-}
-
-// Main function to generate show notes
+// Main generation function
 async function generateShowNotes() {
   console.log("🤖 Starting show notes generation...");
 
-  // Check usage limits first
   if (!usageTracker.canGenerate()) {
     usageTracker.showUpgradePrompt();
     return;
@@ -258,14 +167,10 @@ async function generateShowNotes() {
 
   const transcript = document.getElementById("transcript").value;
   const tone = document.getElementById("tone").value || "casual";
-  const contentType =
-    document.getElementById("contentType").value || "show-notes";
+  const contentType = document.getElementById("contentType").value || "show-notes";
   const generateButton = document.getElementById("generateBtn");
   const outputDiv = document.getElementById("output");
 
-  
-
-  // Validation
   if (!transcript.trim()) {
     alert("Please enter a transcript");
     return;
@@ -276,7 +181,6 @@ async function generateShowNotes() {
     return;
   }
 
-  // Show loading state
   generateButton.disabled = true;
   generateButton.textContent = "Generating...";
   outputDiv.innerHTML = "<p>🤖 Generating your show notes... Please wait!</p>";
@@ -302,55 +206,94 @@ async function generateShowNotes() {
     console.log("Response headers:", response.headers);
 
     if (!response.ok) {
-      throw new Error(
-        `Server error: ${response.status} ${response.statusText}`,
-      );
+      throw new Error(`Server error: ${response.status}`);
     }
 
     const data = await response.json();
     console.log("API response:", data);
 
     if (data.success) {
-      // Record the generation and update usage display
       const usage = usageTracker.recordGeneration();
-      updateUsageDisplay(usage);
 
-      // Display the generated content
+      let displayContent = typeof data.content === 'string' ? data.content : data.content.raw;
+
       outputDiv.innerHTML = `
-        <div class="result">
-          <h3>✅ Generated Show Notes:</h3>
-          <pre style="white-space: pre-wrap; background: #f8f9fa; padding: 15px; border-radius: 5px;">${data.content}</pre>
-          <small style="color: #666;">Tokens used: ${data.usage?.total_tokens || "N/A"}</small>
+        <div style="background: #f0f8ff; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+          <strong>✅ Generated successfully!</strong>
+          ${data.demo_mode ? '<span style="color: #ff6600;"> (Demo Mode - Add OpenAI key for full features)</span>' : ''}
+          <br>Remaining free generations: ${usageTracker.getRemainingGenerations()}
+          ${data.usage ? `<br>Tokens used: ${data.usage.total_tokens}` : ''}
         </div>
+        <pre style="white-space: pre-wrap; background: #f9f9f9; padding: 15px; border-radius: 8px;">${displayContent}</pre>
       `;
 
-      // Trigger event for export buttons
-      document.dispatchEvent(new Event("results-generated"));
+      document.dispatchEvent(new CustomEvent("results-generated"));
+
+      if (typeof gtag !== "undefined") {
+        gtag('event', 'generation_success', {
+          'content_type': contentType,
+          'tone': tone,
+          'demo_mode': !!data.demo_mode
+        });
+      }
     } else {
-      throw new Error(data.error || "Unknown error occurred");
+      throw new Error(data.error || 'Unknown error occurred');
     }
+
   } catch (error) {
     console.error("Generation failed:", error);
     outputDiv.innerHTML = `
-      <div class="error">
-        <h3>❌ Generation Failed</h3>
-        <p><strong>Error:</strong> ${error.message}</p>
-        <p><small>Check the console (F12) for more details.</small></p>
+      <div style="background: #ffe6e6; padding: 15px; border-radius: 8px; color: #d8000c;">
+        <strong>❌ Generation Failed</strong><br>
+        Error: ${error.message}<br><br>
+        Check the console (F12) for more details.
       </div>
     `;
+
+    if (typeof gtag !== "undefined") {
+      gtag('event', 'generation_error', {
+        'error': error.message
+      });
+    }
   } finally {
-    // Reset button
     generateButton.disabled = false;
     generateButton.textContent = "Generate Show Notes";
   }
 }
 
-// Add sample transcript function
-function loadSample() {
-  const sampleText = `Welcome to the Indie Creator Podcast! Today we're talking about building your first online business. Many creators struggle with monetization, but the key is starting small and focusing on one revenue stream. I've helped hundreds of creators go from zero to their first thousand dollars in revenue. The biggest mistake I see is trying to do everything at once instead of mastering one thing first. Today I'll share three specific strategies that work for any creator, regardless of your niche.`;
+// Test connection function
+async function testConnection() {
+  console.log("Testing server connection...");
+  try {
+    const response = await fetch(`${API_URL}/api/test`);
+    console.log("Response received:", response.headers);
 
-  document.getElementById("transcript").value = sampleText;
-  alert("✅ Sample transcript loaded! Now click Generate Show Notes.");
+    const data = await response.json();
+    console.log("Test successful:", data);
+
+    alert(`✅ Connection successful!\nServer: ${data.message}\nOpenAI: ${data.openai_configured ? 'Configured' : 'Not configured'}`);
+  } catch (error) {
+    console.error("Test failed:", error);
+    alert(`❌ Connection failed: ${error.message}`);
+  }
+}
+
+// Load sample function
+function loadSample() {
+  const sampleTranscript = `Hey everyone, welcome back to the Creator Economy Podcast. I'm your host and today we're diving deep into monetizing your content as a creator. 
+
+Now, I've been helping creators for the past five years, and I've helped hundreds of creators go from zero to their first thousand dollars in revenue. And today I want to share with you the three strategies that work no matter what your niche is.
+
+The first strategy is focusing on one revenue stream. The biggest mistake I see is trying to do everything at once instead of mastering one thing first. Whether that's affiliate marketing, courses, or sponsored content - pick one and get really good at it.
+
+The second strategy is starting small. You don't need to launch a $2000 course on day one. Start with a $29 digital product, validate your audience wants it, then scale up.
+
+The third strategy is consistency over perfection. I see so many creators waiting for the perfect moment, the perfect content, the perfect launch. But the key is starting small and focusing on one revenue stream, then expanding from there.
+
+Those are the three strategies that have worked for every single creator I've worked with. If you implement just these three things, you'll be well on your way to building a sustainable creator business.`;
+
+  document.getElementById("transcript").value = sampleTranscript;
+  alert("✅ Sample transcript loaded! Click 'Generate Show Notes' to see it in action.");
 }
 
 // Initialize usage display when page loads
@@ -358,3 +301,29 @@ document.addEventListener("DOMContentLoaded", function () {
   updateUsageDisplay(usageTracker.getUsage());
 });
 
+function updateUsageDisplay(usage) {
+  const remaining = usageTracker.getRemainingGenerations();
+  let usageEl = document.getElementById("usage-display");
+
+  if (!usageEl) {
+    usageEl = document.createElement("div");
+    usageEl.id = "usage-display";
+    usageEl.className = "usage-display";
+
+    const generateBtn = document.getElementById("generateBtn");
+    if (generateBtn && generateBtn.parentNode) {
+      generateBtn.parentNode.insertBefore(usageEl, generateBtn);
+    } else {
+      document.body.appendChild(usageEl); // Fallback if generateBtn not found
+    }
+  }
+
+  if (usage.isPaid) {
+    usageEl.innerHTML = "✨ Unlimited generations";
+    usageEl.className = "usage-display premium";
+  } else {
+    usageEl.innerHTML = `${remaining} free generations remaining`;
+    usageEl.className =
+      remaining <= 2 ? "usage-display warning" : "usage-display";
+  }
+}
