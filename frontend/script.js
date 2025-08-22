@@ -6,7 +6,7 @@ console.log("🚀 Script loaded successfully!");
 // --------------------------
 // API Configuration
 // --------------------------
-const API_URL = ""; // Empty = same domain as frontend on Vercel
+const API_URL = "https://seo-show-notes-generator.vercel.app/"; // Empty = same domain as frontend on Vercel
 
 // --------------------------
 // Usage Tracker

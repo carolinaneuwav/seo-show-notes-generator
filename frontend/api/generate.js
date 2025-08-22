@@ -1,3 +1,50 @@
+function getApiUrl() {
+  return "/api"; // Vercel automatically routes /api/* to serverless functions
+}
+
+async function generateShowNotes() {
+  const transcript = document.getElementById("transcript").value;
+  const tone = document.getElementById("tone").value || "casual";
+  const contentType = document.getElementById("contentType").value || "show-notes";
+  const outputDiv = document.getElementById("output");
+  const generateButton = document.getElementById("generateBtn");
+
+  if (!transcript.trim()) {
+    outputDiv.innerHTML = `<div class="error">❌ Please enter a transcript</div>`;
+    return;
+  }
+
+  try {
+    generateButton.disabled = true;
+    generateButton.textContent = "Generating...";
+    outputDiv.innerHTML = "<div class='loading'>🤖 Generating your show notes...</div>";
+
+    const res = await fetch(`${getApiUrl()}/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ transcript, tone, contentType }),
+    });
+
+    const data = await res.json();
+
+    if (data.success) {
+      outputDiv.innerHTML = `
+        <div class="result">
+          <h3>✅ Generated Show Notes:</h3>
+          <pre style="white-space: pre-wrap;">${data.content}</pre>
+          <small>Tokens used: ${data.usage.total_tokens}</small>
+        </div>
+      `;
+    } else {
+      outputDiv.innerHTML = `<div class="error">❌ ${data.error}</div>`;
+    }
+  } catch (err) {
+    outputDiv.innerHTML = `<div class="error">❌ ${err.message}</div>`;
+  } finally {
+    generateButton.disabled = false;
+    generateButton.textContent = "Generate Show Notes";
+  }
+  
 import OpenAI from 'openai';
 
 const openai = new OpenAI({
