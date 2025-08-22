@@ -3,12 +3,10 @@
   "functions": {
     "api/*.js": {
       "runtime": "nodejs18.x",
-      "maxDuration": 30
+      "maxDuration": 30,
+      "memory": 128
     }
   },
-  "routes": [
-    { "src": "/api/(.*)", "dest": "/api/$1.js" }
-  ],
   "headers": [
     {
       "source": "/api/(.*)",
@@ -20,3 +18,4 @@
     }
   ]
 }
+
