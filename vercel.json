@@ -1,8 +1,11 @@
 {
   "version": 2,
-  "builds": [
-    { "src": "api/*.js", "use": "@vercel/node" }
-  ],
+  "functions": {
+    "api/*.js": {
+      "runtime": "nodejs18.x",
+      "maxDuration": 30
+    }
+  },
   "routes": [
     { "src": "/api/(.*)", "dest": "/api/$1.js" }
   ],
@@ -15,8 +18,5 @@
         { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization" }
       ]
     }
-  ],
-  "functions": {
-    "api/*.js": { "maxDuration": 30 }
-  }
+  ]
 }
