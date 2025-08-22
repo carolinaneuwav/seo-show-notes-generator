@@ -3,10 +3,11 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "vercel dev"
+    "dev": "vercel dev",
+    "start": "node server.js"
   },
   "engines": {
-    "node": "18.x"
+    "node": ">=20"
   },
   "dependencies": {
     "openai": "^4.12.0",
