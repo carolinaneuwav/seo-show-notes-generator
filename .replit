@@ -18,7 +18,23 @@ ignorePorts = false
 localPort = 3000
 externalPort = 80
 
+[[ports]]
+localPort = 3001
+externalPort = 3001
+
+[[ports]]
+localPort = 3002
+
+[[ports]]
+localPort = 8080
+externalPort = 8080
+
+[[ports]]
+localPort = 30011
+externalPort = 3000
+
 [workflows]
+runButton = "Run"
 
 [[workflows.workflow]]
 name = "Run"

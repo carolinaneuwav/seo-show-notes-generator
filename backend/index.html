@@ -1,0 +1,753 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>🚀 SEO Show Notes Generator MVP</title>
+        <style>
+            /* Hide elements by default */
+            .hidden {
+                display: none !important;
+            }
+
+            /* Base styles */
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                line-height: 1.6;
+                color: #333;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                padding: 20px;
+            }
+
+            .container {
+                max-width: 800px;
+                margin: 0 auto;
+                background: white;
+                border-radius: 15px;
+                padding: 30px;
+                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            }
+
+            .header {
+                text-align: center;
+                margin-bottom: 30px;
+            }
+
+            .header h1 {
+                color: #667eea;
+                margin-bottom: 10px;
+                font-size: 2.2em;
+            }
+
+            /* Form styles */
+            .form-group {
+                margin-bottom: 20px;
+            }
+
+            label {
+                display: block;
+                margin-bottom: 8px;
+                font-weight: 600;
+                color: #555;
+            }
+
+            textarea, select {
+                width: 100%;
+                padding: 12px;
+                border: 2px solid #e1e5e9;
+                border-radius: 8px;
+                font-size: 16px;
+                transition: border-color 0.3s;
+            }
+
+            textarea:focus, select:focus {
+                outline: none;
+                border-color: #667eea;
+            }
+
+            textarea {
+                min-height: 120px;
+                resize: vertical;
+            }
+
+            /* Button styles */
+            .btn {
+                display: inline-block;
+                padding: 12px 24px;
+                border: none;
+                border-radius: 8px;
+                font-size: 16px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.3s;
+                text-decoration: none;
+                text-align: center;
+            }
+
+            .btn:disabled {
+                opacity: 0.6;
+                cursor: not-allowed;
+                transform: none !important;
+            }
+
+            .btn-primary {
+                background: linear-gradient(135deg, #667eea, #764ba2);
+                color: white;
+            }
+
+            .btn-primary:hover:not(:disabled) {
+                transform: translateY(-2px);
+                box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+            }
+
+            .btn-secondary {
+                background: #6c757d;
+                color: white;
+            }
+
+            .btn-outline {
+                background: transparent;
+                border: 2px solid #667eea;
+                color: #667eea;
+            }
+
+            .btn-outline:hover {
+                background: #667eea;
+                color: white;
+            }
+
+            /* Usage display styles */
+            .usage-display {
+                padding: 12px;
+                border-radius: 8px;
+                margin-bottom: 20px;
+                font-weight: 600;
+                text-align: center;
+            }
+
+            .usage-display.warning {
+                background: #fff3cd;
+                color: #856404;
+                border: 1px solid #ffeaa7;
+            }
+
+            .usage-display.premium {
+                background: linear-gradient(135deg, #667eea, #764ba2);
+                color: white;
+            }
+
+            .usage-display.normal {
+                background: #d1ecf1;
+                color: #0c5460;
+                border: 1px solid #bee5eb;
+            }
+
+            /* Action buttons */
+            .action-buttons {
+                display: flex;
+                gap: 10px;
+                justify-content: center;
+                flex-wrap: wrap;
+                margin-bottom: 30px;
+            }
+
+            /* Output styles */
+            #output {
+                margin-top: 30px;
+                padding: 20px;
+                background: #f8f9fa;
+                border-radius: 8px;
+                border: 1px solid #e9ecef;
+            }
+
+            /* Export styles */
+            .export-section {
+                margin-top: 20px;
+                padding: 15px;
+                background: #e9ecef;
+                border-radius: 8px;
+                text-align: center;
+            }
+
+            .export-btn {
+                display: inline-block;
+                margin: 5px;
+                padding: 8px 16px;
+                background: #667eea;
+                color: white;
+                border: none;
+                border-radius: 5px;
+                cursor: pointer;
+                font-size: 14px;
+            }
+
+            .export-btn:hover {
+                background: #5a6fd8;
+            }
+
+            /* Modal styles */
+            .upgrade-modal {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.5);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 1000;
+            }
+
+            .modal-content {
+                background: white;
+                padding: 30px;
+                border-radius: 15px;
+                max-width: 500px;
+                width: 90%;
+                text-align: center;
+                position: relative;
+            }
+
+            .modal-close {
+                position: absolute;
+                top: 10px;
+                right: 15px;
+                background: none;
+                border: none;
+                font-size: 24px;
+                cursor: pointer;
+                color: #999;
+            }
+
+            .modal-buttons {
+                display: flex;
+                gap: 15px;
+                justify-content: center;
+                flex-wrap: wrap;
+                margin-top: 20px;
+            }
+
+            .btn-cancel {
+                background: #6c757d;
+                color: white;
+                padding: 10px 20px;
+                border: none;
+                border-radius: 5px;
+                cursor: pointer;
+            }
+
+            .error {
+                background: #f8d7da;
+                color: #721c24;
+                padding: 15px;
+                border-radius: 5px;
+                border: 1px solid #f5c6cb;
+                margin: 10px 0;
+            }
+
+            .loading {
+                background: #d1ecf1;
+                color: #0c5460;
+                padding: 15px;
+                border-radius: 5px;
+                border: 1px solid #bee5eb;
+            }
+
+            @media (max-width: 600px) {
+                .container {
+                    padding: 20px;
+                }
+                .action-buttons {
+                    flex-direction: column;
+                }
+                .modal-buttons {
+                    flex-direction: column;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <!-- Header -->
+            <div class="header">
+                <h1>🚀 SEO Show Notes Generator MVP</h1>
+                <p>Transform your podcast transcripts into engaging show notes</p>
+            </div>
+
+            <!-- Main Form -->
+            <div id="main-app">
+                <div class="form-group">
+                    <label for="transcript">Paste your transcript here:</label>
+                    <textarea id="transcript" placeholder="Paste your podcast transcript here..."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="tone">Tone:</label>
+                    <select id="tone">
+                        <option value="casual">Casual</option>
+                        <option value="formal">Formal</option>
+                        <option value="witty">Witty</option>
+                        <option value="professional">Professional</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="contentType">Content Type:</label>
+                    <select id="contentType">
+                        <option value="show-notes">📝 Enhanced Show Notes</option>
+                        <option value="social">📱 Social Media Content</option>
+                    </select>
+                </div>
+
+                <!-- Usage Display -->
+                <div id="usage-display" class="usage-display normal">
+                    5 free generations remaining this month
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="action-buttons">
+                    <button id="generateBtn" class="btn btn-primary">
+                        Generate Show Notes
+                    </button>
+                    <button class="btn btn-outline" onclick="testConnection()">
+                        🔍 Test Connection
+                    </button>
+                    <button class="btn btn-outline" onclick="loadSample()">
+                        📝 Load Sample
+                    </button>
+                </div>
+
+                <!-- Output Area -->
+                <div id="output">
+                    <p>👆 Enter your transcript and click "Generate Show Notes"!</p>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            // Replit-Optimized Show Notes Generator
+            console.log("🚀 Script loaded successfully!");
+
+            // Configuration - Auto-detect Replit URL
+            const getApiUrl = () => {
+                return window.location.origin;
+            };
+
+            const API_URL = getApiUrl();
+            console.log("🔗 API URL:", API_URL);
+
+            // Simple in-memory storage for Replit
+            const storage = {
+                data: new Map(),
+                getItem: function(key) {
+                    return this.data.get(key) || null;
+                },
+                setItem: function(key, value) {
+                    this.data.set(key, value);
+                },
+                removeItem: function(key) {
+                    this.data.delete(key);
+                }
+            };
+
+            // Usage tracking system
+            class UsageTracker {
+                constructor() {
+                    this.storageKey = 'showNotesUsage';
+                    this.freeLimit = 5;
+                }
+
+                getCurrentUsage() {
+                    const usage = storage.getItem(this.storageKey);
+                    if (!usage) {
+                        return this.createDefaultUsage();
+                    }
+                    try {
+                        return JSON.parse(usage);
+                    } catch (e) {
+                        return this.createDefaultUsage();
+                    }
+                }
+
+                createDefaultUsage() {
+                    return {
+                        count: 0,
+                        month: new Date().getMonth(),
+                        year: new Date().getFullYear(),
+                        firstUse: null,
+                        isPaid: false
+                    };
+                }
+
+                incrementUsage() {
+                    const currentMonth = new Date().getMonth();
+                    const currentYear = new Date().getFullYear();
+                    let usage = this.getCurrentUsage();
+
+                    // Reset if new month
+                    if (usage.month !== currentMonth || usage.year !== currentYear) {
+                        usage = {
+                            count: 0,
+                            month: currentMonth,
+                            year: currentYear,
+                            firstUse: usage.firstUse || new Date().toISOString(),
+                            isPaid: usage.isPaid || false
+                        };
+                    }
+
+                    usage.count++;
+                    if (!usage.firstUse) {
+                        usage.firstUse = new Date().toISOString();
+                    }
+
+                    storage.setItem(this.storageKey, JSON.stringify(usage));
+                    return usage;
+                }
+
+                canGenerate() {
+                    const usage = this.getCurrentUsage();
+                    return usage.isPaid || usage.count < this.freeLimit;
+                }
+
+                getRemainingGenerations() {
+                    const usage = this.getCurrentUsage();
+                    if (usage.isPaid) return "Unlimited";
+                    return Math.max(0, this.freeLimit - usage.count);
+                }
+
+                showUpgradePrompt() {
+                    const remaining = this.getRemainingGenerations();
+                    if (remaining === 0) {
+                        showUpgradeModal();
+                        return true;
+                    }
+                    return false;
+                }
+            }
+
+            // Export functionality
+            class ShowNotesExporter {
+                constructor() {
+                    this.addExportButtons();
+                }
+
+                addExportButtons() {
+                    document.addEventListener("results-generated", () => {
+                        const outputDiv = document.getElementById("output");
+                        if (outputDiv && !outputDiv.querySelector(".export-section")) {
+                            const exportHTML = `
+                                <div class="export-section">
+                                    <h4>📥 Export Your Show Notes</h4>
+                                    <div class="export-buttons">
+                                        <button class="export-btn" onclick="showNotesExporter.exportTXT()">📄 Download TXT</button>
+                                        <button class="export-btn" onclick="showNotesExporter.exportMarkdown()">📝 Download Markdown</button>
+                                        <button class="export-btn" onclick="showNotesExporter.exportPDF()">📋 Download PDF</button>
+                                    </div>
+                                </div>
+                            `;
+                            outputDiv.insertAdjacentHTML("beforeend", exportHTML);
+                        }
+                    });
+                }
+
+                getShowNotesContent() {
+                    const outputDiv = document.getElementById("output");
+                    const preElement = outputDiv?.querySelector("pre");
+                    return preElement ? preElement.textContent : "";
+                }
+
+                downloadFile(content, filename, mimeType) {
+                    try {
+                        const blob = new Blob([content], { type: mimeType });
+                        const url = window.URL.createObjectURL(blob);
+                        const link = document.createElement("a");
+                        link.href = url;
+                        link.download = filename;
+                        link.style.display = 'none';
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        setTimeout(() => window.URL.revokeObjectURL(url), 100);
+                    } catch (e) {
+                        console.error('Download failed:', e);
+                        alert('Download failed. Please try copying the text manually.');
+                    }
+                }
+
+                exportTXT() {
+                    const showNotes = this.getShowNotesContent();
+                    if (!showNotes) {
+                        alert("No show notes to export. Generate some first!");
+                        return;
+                    }
+                    this.downloadFile(showNotes, "show-notes.txt", "text/plain");
+                }
+
+                exportMarkdown() {
+                    const showNotes = this.getShowNotesContent();
+                    if (!showNotes) {
+                        alert("No show notes to export. Generate some first!");
+                        return;
+                    }
+                    this.downloadFile(showNotes, "show-notes.md", "text/markdown");
+                }
+
+                exportPDF() {
+                    const showNotes = this.getShowNotesContent();
+                    if (!showNotes) {
+                        alert("No show notes to export. Generate some first!");
+                        return;
+                    }
+
+                    try {
+                        const printWindow = window.open("", "_blank");
+                        if (!printWindow) {
+                            alert("Pop-up blocked. Please allow pop-ups for this site and try again.");
+                            return;
+                        }
+
+                        printWindow.document.write(`
+                            <!DOCTYPE html>
+                            <html>
+                            <head>
+                                <title>Show Notes</title>
+                                <style>
+                                    body { font-family: Arial, sans-serif; line-height: 1.6; margin: 40px; }
+                                    pre { white-space: pre-wrap; font-family: inherit; }
+                                    h1, h2, h3 { color: #333; }
+                                    @media print { body { margin: 20px; } }
+                                </style>
+                            </head>
+                            <body>
+                                <pre>${showNotes.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
+                            </body>
+                            </html>
+                        `);
+                        printWindow.document.close();
+
+                        setTimeout(() => {
+                            printWindow.print();
+                            setTimeout(() => printWindow.close(), 500);
+                        }, 250);
+                    } catch (e) {
+                        console.error('PDF export failed:', e);
+                        alert('PDF export failed. Please try copying the text and printing manually.');
+                    }
+                }
+            }
+
+            // Initialize classes
+            const usageTracker = new UsageTracker();
+            const showNotesExporter = new ShowNotesExporter();
+
+            // Main generation function
+            async function generateShowNotes() {
+                console.log("🤖 Starting show notes generation...");
+
+                if (!usageTracker.canGenerate()) {
+                    usageTracker.showUpgradePrompt();
+                    return;
+                }
+
+                const transcript = document.getElementById("transcript")?.value;
+                const tone = document.getElementById("tone")?.value || "casual";
+                const contentType = document.getElementById("contentType")?.value || "show-notes";
+                const generateButton = document.getElementById("generateBtn");
+                const outputDiv = document.getElementById("output");
+
+                if (!transcript || !transcript.trim()) {
+                    alert("Please enter a transcript");
+                    return;
+                }
+
+                if (transcript.trim().length < 10) {
+                    alert("Please enter a longer transcript (at least 10 characters)");
+                    return;
+                }
+
+                // Show loading state
+                if (generateButton) {
+                    generateButton.disabled = true;
+                    generateButton.textContent = "Generating...";
+                }
+
+                if (outputDiv) {
+                    outputDiv.innerHTML = "<p>🤖 Generating your show notes... Please wait!</p>";
+                }
+
+                try {
+                    console.log("Making API request to:", `${API_URL}/api/generate`);
+
+                    const response = await fetch(`${API_URL}/api/generate`, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "Accept": "application/json",
+                        },
+                        body: JSON.stringify({
+                            transcript: transcript.trim(),
+                            tone: tone,
+                            contentType: contentType,
+                        }),
+                    });
+
+                    console.log("Response status:", response.status);
+
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        console.error("Server error response:", errorText);
+                        throw new Error(`Server error: ${response.status} ${response.statusText}`);
+                    }
+
+                    const data = await response.json();
+                    console.log("API response:", data);
+
+                    if (data.success && data.content) {
+                        const usage = usageTracker.incrementUsage();
+                        updateUsageDisplay(usage);
+
+                        if (outputDiv) {
+                            outputDiv.innerHTML = `
+                                <div class="result">
+                                    <h3>✅ Generated Show Notes:</h3>
+                                    <pre style="white-space: pre-wrap; background: #f8f9fa; padding: 15px; border-radius: 5px; border: 1px solid #e9ecef; overflow-wrap: break-word;">${data.content}</pre>
+                                    <small style="color: #666; margin-top: 10px; display: block;">Tokens used: ${data.usage?.total_tokens || "N/A"}</small>
+                                </div>
+                            `;
+                            document.dispatchEvent(new Event("results-generated"));
+                        }
+                    } else {
+                        throw new Error(data.error || "No content generated");
+                    }
+                } catch (error) {
+                    console.error("Generation failed:", error);
+                    if (outputDiv) {
+                        outputDiv.innerHTML = `
+                            <div class="error">
+                                <h3>❌ Generation Failed</h3>
+                                <p><strong>Error:</strong> ${error.message}</p>
+                                <p><small>Check the browser console (F12) for more details.</small></p>
+                                <p><small>API URL: ${API_URL}</small></p>
+                            </div>
+                        `;
+                    }
+                } finally {
+                    if (generateButton) {
+                        generateButton.disabled = false;
+                        generateButton.textContent = "Generate Show Notes";
+                    }
+                }
+            }
+
+            // UI Updates
+            function updateUsageDisplay(usage) {
+                const remaining = usageTracker.getRemainingGenerations();
+                let usageEl = document.getElementById("usage-display");
+
+                if (!usageEl) {
+                    usageEl = document.createElement("div");
+                    usageEl.id = "usage-display";
+                    usageEl.className = "usage-display";
+                }
+
+                if (usage && usage.isPaid) {
+                    usageEl.innerHTML = "✨ Unlimited generations";
+                    usageEl.className = "usage-display premium";
+                } else {
+                    usageEl.innerHTML = `${remaining} free generations remaining this month`;
+                    usageEl.className = remaining <= 2 ? "usage-display warning" : "usage-display normal";
+                }
+            }
+
+            // Upgrade Modal
+            function showUpgradeModal() {
+                closeModal();
+
+                const modal = document.createElement('div');
+                modal.className = 'upgrade-modal';
+                modal.innerHTML = `
+                    <div class="modal-content">
+                        <button class="modal-close" onclick="closeModal()">&times;</button>
+                        <h3>🚀 Ready to unlock unlimited show notes?</h3>
+                        <p>You've used all 5 free generations this month! Upgrade to continue creating amazing content.</p>
+                        <div class="modal-buttons">
+                            <button class="btn btn-primary">Creator Plan - €9/month</button>
+                            <button class="btn btn-secondary">Pro Plan - €15/month</button>
+                            <button onclick="closeModal()" class="btn-cancel">Maybe Later</button>
+                        </div>
+                    </div>
+                `;
+
+                document.body.appendChild(modal);
+            }
+
+            function closeModal() {
+                const modal = document.querySelector('.upgrade-modal');
+                if (modal) {
+                    modal.remove();
+                }
+            }
+
+            // Test function
+            async function testConnection() {
+                try {
+                    console.log("Testing server connection to:", `${API_URL}/api/test`);
+                    const response = await fetch(`${API_URL}/api/test`, {
+                        method: 'GET',
+                        headers: { 'Accept': 'application/json' }
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    console.log("Test successful:", data);
+                    alert("✅ Server connection works! Response: " + JSON.stringify(data));
+                } catch (error) {
+                    console.error("Test failed:", error);
+                    alert("❌ Server connection failed: " + error.message + "\nAPI URL: " + API_URL);
+                }
+            }
+
+            // Load sample function
+            function loadSample() {
+                const sampleText = `Welcome to the Indie Creator Podcast! Today we're talking about building your first online business. Many creators struggle with monetization, but the key is starting small and focusing on one revenue stream. I've helped hundreds of creators go from zero to their first thousand dollars in revenue. The biggest mistake I see is trying to do everything at once instead of mastering one thing first. Today I'll share three specific strategies that work for any creator, regardless of your niche.`;
+
+                const transcriptEl = document.getElementById("transcript");
+                if (transcriptEl) {
+                    transcriptEl.value = sampleText;
+                    alert("✅ Sample transcript loaded! Now click Generate Show Notes.");
+                }
+            }
+
+            // Initialize on page load
+            function initializeApp() {
+                console.log("🚀 Initializing Show Notes Generator...");
+                updateUsageDisplay(usageTracker.getCurrentUsage());
+
+                const generateBtn = document.getElementById("generateBtn");
+                if (generateBtn) {
+                    generateBtn.addEventListener('click', generateShowNotes);
+                }
+
+                console.log("✅ App initialized successfully!");
+            }
+
+            // Initialize when DOM is ready
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initializeApp);
+            } else {
+                initializeApp();
+            }
+        </script>
+    </body>
+</html>
