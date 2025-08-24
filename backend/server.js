@@ -4,6 +4,15 @@ const path = require('path');
 
 const app = express();
 
+// Initialize Stripe - only if key exists
+let stripe = null;
+if (process.env.STRIPE_SECRET_KEY) {
+  stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+  console.log('✅ Stripe initialized successfully');
+} else {
+  console.log('⚠️ STRIPE_SECRET_KEY not found - Stripe features disabled');
+}
+
 // Enhanced CORS configuration for Replit
 app.use(cors({
   origin: true,
@@ -38,7 +47,8 @@ app.get('/health', (req, res) => {
     port: PORT,
     host: '0.0.0.0',
     directory: __dirname,
-    staticPath: path.join(__dirname, '..')
+    staticPath: path.join(__dirname, '..'),
+    stripe_enabled: !!stripe
   });
 });
 
@@ -54,11 +64,189 @@ app.get('/api/test', (req, res) => {
     nodeVersion: process.version,
     platform: process.platform,
     port: PORT,
-    host: '0.0.0.0'
+    host: '0.0.0.0',
+    stripe_enabled: !!stripe
   });
 });
 
-// Main generation endpoint
+// STRIPE CHECKOUT ENDPOINT
+app.post('/create-checkout-session', async (req, res) => {
+  console.log('💳 Stripe checkout session requested');
+
+  if (!stripe) {
+    return res.status(500).json({
+      error: 'Stripe not configured. Please set STRIPE_SECRET_KEY environment variable.'
+    });
+  }
+
+  try {
+    const { plan } = req.body;
+    console.log('Plan requested:', plan);
+
+    // Define your plans - YOU NEED TO REPLACE THESE WITH REAL STRIPE PRICE IDs
+    const plans = {
+      creator: {
+        price_id: process.env.STRIPE_CREATOR_PRICE_ID || "price_1RyHyIDF11JZQS5lv1GdG3Ef", // Replace with real Stripe Price ID
+        name: 'Creator Plan - €5/month'
+      },
+      pro: {
+        price_id: process.env.STRIPE_PRO_PRICE_ID || 'price_1RyI0IDF11JZQS5l914rSyO0', // Replace with real Stripe Price ID
+        name: 'Pro Plan - €15/month'
+      }
+    };
+
+    if (!plans[plan]) {
+      return res.status(400).json({ error: 'Invalid plan selected' });
+    }
+
+    // Get the base URL for redirects
+    const baseUrl = req.headers.origin || `${req.protocol}://${req.get('host')}`;
+    console.log('Base URL for redirects:', baseUrl);
+
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price: plans[plan].price_id,
+          quantity: 1,
+        },
+      ],
+      mode: 'subscription',
+      success_url: `${baseUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${baseUrl}/cancel`,
+      metadata: {
+        plan: plan,
+        created_at: new Date().toISOString()
+      }
+    });
+
+    console.log('✅ Stripe session created:', session.id);
+    console.log('Redirect URL:', session.url);
+
+    res.json({ 
+      success: true,
+      url: session.url,
+      session_id: session.id 
+    });
+
+  } catch (error) {
+    console.error('❌ Stripe checkout error:', error);
+    res.status(500).json({ 
+      error: 'Failed to create checkout session',
+      details: error.message,
+      success: false
+    });
+  }
+});
+
+// SUCCESS PAGE
+app.get('/success', (req, res) => {
+  const sessionId = req.query.session_id;
+  console.log('✅ Payment successful, session:', sessionId);
+
+  res.send(`
+    <html>
+      <head>
+        <title>Payment Success - Show Notes Generator</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+          body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            text-align: center; 
+            padding: 50px 20px; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            margin: 0;
+            color: white;
+          }
+          .success-container {
+            background: white;
+            color: #333;
+            padding: 40px;
+            border-radius: 15px;
+            max-width: 500px;
+            margin: 0 auto;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+          }
+          .btn {
+            background: #667eea; 
+            color: white; 
+            padding: 12px 24px; 
+            text-decoration: none; 
+            border-radius: 8px;
+            display: inline-block;
+            margin-top: 20px;
+            font-weight: 600;
+          }
+          .btn:hover { background: #5a6fd8; }
+        </style>
+      </head>
+      <body>
+        <div class="success-container">
+          <h1>🎉 Welcome to Premium!</h1>
+          <p>Your payment was successful! You now have unlimited access to our show notes generator.</p>
+          <p><small>Session ID: ${sessionId || 'N/A'}</small></p>
+          <a href="/" class="btn">Start Creating Show Notes</a>
+        </div>
+      </body>
+    </html>
+  `);
+});
+
+// CANCEL PAGE  
+app.get('/cancel', (req, res) => {
+  console.log('❌ Payment cancelled by user');
+
+  res.send(`
+    <html>
+      <head>
+        <title>Payment Cancelled - Show Notes Generator</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+          body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            text-align: center; 
+            padding: 50px 20px; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            margin: 0;
+            color: white;
+          }
+          .cancel-container {
+            background: white;
+            color: #333;
+            padding: 40px;
+            border-radius: 15px;
+            max-width: 500px;
+            margin: 0 auto;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+          }
+          .btn {
+            background: #667eea; 
+            color: white; 
+            padding: 12px 24px; 
+            text-decoration: none; 
+            border-radius: 8px;
+            display: inline-block;
+            margin-top: 20px;
+            font-weight: 600;
+          }
+          .btn:hover { background: #5a6fd8; }
+        </style>
+      </head>
+      <body>
+        <div class="cancel-container">
+          <h1>Payment Cancelled</h1>
+          <p>No problem! You can always upgrade later when you're ready.</p>
+          <p>You still have access to your free generations for this month.</p>
+          <a href="/" class="btn">Back to Generator</a>
+        </div>
+      </body>
+    </html>
+  `);
+});
+
+// Main generation endpoint (unchanged)
 app.post('/api/generate', async (req, res) => {
   console.log('🤖 Generate endpoint called');
   console.log('Request headers:', req.headers);
@@ -131,7 +319,7 @@ app.get('/', (req, res) => {
   res.sendFile(htmlPath);
 });
 
-// Enhanced mock show notes generator
+// Enhanced mock show notes generator (unchanged)
 function generateMockShowNotes(transcript, tone, contentType) {
   const toneStyles = {
     casual: "Hey everyone! Here's what we covered today:",
@@ -269,7 +457,11 @@ app.listen(PORT, HOST, () => {
   console.log(`🔗 API endpoints available:`);
   console.log(`   GET  /api/test - Test server connection`);
   console.log(`   POST /api/generate - Generate show notes`);
+  console.log(`   POST /create-checkout-session - Create Stripe checkout`);
+  console.log(`   GET  /success - Payment success page`);
+  console.log(`   GET  /cancel - Payment cancel page`);
   console.log(`   GET  /health - Health check`);
   console.log(`   GET  / - Main application`);
   console.log(`\n⚠️  IMPORTANT: Make sure index.html is in the project root directory`);
+  console.log(`💳 Stripe status: ${stripe ? 'Enabled' : 'Disabled (add STRIPE_SECRET_KEY)'}`);
 });

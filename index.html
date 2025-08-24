@@ -333,25 +333,20 @@
         </div>
 
         <script>
-            // Replit-Optimized Show Notes Generator
+            // Show Notes Generator with Stripe Integration
             console.log("🚀 Script loaded successfully!");
 
-            // Configuration - Auto-detect Replit URL
+            // Configuration - Auto-detect URL
             const getApiUrl = () => {
-                // Force use of current origin for Replit
                 const currentOrigin = window.location.origin;
                 console.log("Current window.location.origin:", currentOrigin);
-                console.log("Current hostname:", window.location.hostname);
-
-                // Always use current origin in Replit environment
                 return currentOrigin;
             };
 
             const API_URL = getApiUrl();
             console.log("🔗 API URL:", API_URL);
-            console.log("🔗 Full location:", window.location.href);
 
-            // Simple in-memory storage for Replit
+            // Simple in-memory storage
             const storage = {
                 data: new Map(),
                 getItem: function(key) {
@@ -555,6 +550,78 @@
             const usageTracker = new UsageTracker();
             const showNotesExporter = new ShowNotesExporter();
 
+            // Modal functions - DEFINED FIRST
+            function closeModal() {
+                const modal = document.querySelector('.upgrade-modal');
+                if (modal) {
+                    modal.remove();
+                }
+            }
+
+            function showUpgradeModal() {
+                closeModal(); // This will now work because closeModal is defined above
+
+                const modal = document.createElement('div');
+                modal.className = 'upgrade-modal';
+                modal.innerHTML = `
+                    <div class="modal-content">
+                        <button class="modal-close" onclick="closeModal()">&times;</button>
+                        <h3>🚀 Ready to unlock unlimited show notes?</h3>
+                        <p>You've used all 5 free generations this month! Upgrade to continue creating amazing content.</p>
+                        <div class="modal-buttons">
+                            <button class="btn btn-primary" onclick="upgradeToCreator()">Creator Plan - €9/month</button>
+                            <button class="btn btn-secondary" onclick="upgradeToPro()">Pro Plan - €15/month</button>
+                            <button onclick="closeModal()" class="btn-cancel">Maybe Later</button>
+                        </div>
+                    </div>
+                `;
+
+                document.body.appendChild(modal);
+            }
+
+            // Stripe checkout functions
+            async function upgradeToCreator() {
+                await createCheckoutSession('creator');
+            }
+
+            async function upgradeToPro() {
+                await createCheckoutSession('pro');
+            }
+
+            async function createCheckoutSession(plan) {
+                try {
+                    console.log(`Creating checkout session for plan: ${plan}`);
+
+                    const response = await fetch(`${API_URL}/create-checkout-session`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            plan: plan
+                        })
+                    });
+
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        throw new Error(`Failed to create checkout session: ${response.status} ${errorText}`);
+                    }
+
+                    const data = await response.json();
+                    console.log('Checkout session created:', data);
+
+                    if (data.url) {
+                        window.location.href = data.url;
+                    } else {
+                        throw new Error('No checkout URL received from server');
+                    }
+
+                } catch (error) {
+                    console.error('Checkout failed:', error);
+                    alert(`Failed to start checkout: ${error.message}`);
+                }
+            }
+
             // Main generation function
             async function generateShowNotes() {
                 console.log("🤖 Starting show notes generation...");
@@ -591,11 +658,6 @@
                 }
 
                 try {
-                    console.log("🔍 Debug info:");
-                    console.log("- API_URL:", API_URL);
-                    console.log("- window.location.origin:", window.location.origin);
-                    console.log("- window.location.href:", window.location.href);
-
                     const generateUrl = `${API_URL}/api/generate`;
                     console.log("Making API request to:", generateUrl);
 
@@ -680,42 +742,10 @@
                 }
             }
 
-            // Upgrade Modal
-            function showUpgradeModal() {
-                closeModal();
-
-                const modal = document.createElement('div');
-                modal.className = 'upgrade-modal';
-                modal.innerHTML = `
-                    <div class="modal-content">
-                        <button class="modal-close" onclick="closeModal()">&times;</button>
-                        <h3>🚀 Ready to unlock unlimited show notes?</h3>
-                        <p>You've used all 5 free generations this month! Upgrade to continue creating amazing content.</p>
-                        <div class="modal-buttons">
-                            <button class="btn btn-primary">Creator Plan - €9/month</button>
-                            <button class="btn btn-secondary">Pro Plan - €15/month</button>
-                            <button onclick="closeModal()" class="btn-cancel">Maybe Later</button>
-                        </div>
-                    </div>
-                `;
-
-                document.body.appendChild(modal);
-            }
-
-            function closeModal() {
-                const modal = document.querySelector('.upgrade-modal');
-                if (modal) {
-                    modal.remove();
-                }
-            }
-
-            // Test function
+            // Test connection function
             async function testConnection() {
                 try {
                     console.log("🔍 Testing connection...");
-                    console.log("Current window.location:", window.location);
-                    console.log("API_URL being used:", API_URL);
-
                     const testUrl = `${API_URL}/api/test`;
                     console.log("Testing server connection to:", testUrl);
 
@@ -725,7 +755,6 @@
                     });
 
                     console.log("Response received:", response.status, response.statusText);
-                    console.log("Response URL:", response.url);
 
                     if (!response.ok) {
                         throw new Error(`HTTP error! status: ${response.status}`);
@@ -736,10 +765,6 @@
                     alert("✅ Server connection works! Response: " + JSON.stringify(data, null, 2));
                 } catch (error) {
                     console.error("Test failed:", error);
-                    console.error("Error details:", {
-                        message: error.message,
-                        stack: error.stack
-                    });
                     alert(`❌ Server connection failed: ${error.message}\nAPI URL: ${API_URL}\nCheck console for details`);
                 }
             }
