@@ -1,46 +1,13 @@
-entrypoint = "index.js"
-modules = ["nodejs-22"]
-hidden = [".config", "package-lock.json"]
 
-[gitHubImport]
-requiredFiles = [".replit", "replit.nix", "package.json", "package-lock.json"]
+run = "node backend/server.js"
+modules = ["nodejs-20"]
 
 [nix]
-channel = "stable-24_11"
-packages = ["imagemagick_light"]
+channel = "stable-23_11"
 
 [deployment]
 run = ["sh", "-c", "node backend/server.js"]
-deploymentTarget = "autoscale"
-ignorePorts = false
 
 [[ports]]
 localPort = 3000
 externalPort = 80
-
-[[ports]]
-localPort = 3001
-externalPort = 3001
-
-[[ports]]
-localPort = 3002
-
-[[ports]]
-localPort = 8080
-externalPort = 8080
-
-[[ports]]
-localPort = 30011
-externalPort = 3000
-
-[workflows]
-runButton = "Run"
-
-[[workflows.workflow]]
-name = "Run"
-author = 46627536
-mode = "sequential"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "node backend/server.js"
