@@ -338,11 +338,18 @@
 
             // Configuration - Auto-detect Replit URL
             const getApiUrl = () => {
-                return window.location.origin;
+                // Force use of current origin for Replit
+                const currentOrigin = window.location.origin;
+                console.log("Current window.location.origin:", currentOrigin);
+                console.log("Current hostname:", window.location.hostname);
+
+                // Always use current origin in Replit environment
+                return currentOrigin;
             };
 
             const API_URL = getApiUrl();
             console.log("🔗 API URL:", API_URL);
+            console.log("🔗 Full location:", window.location.href);
 
             // Simple in-memory storage for Replit
             const storage = {
@@ -584,9 +591,15 @@
                 }
 
                 try {
-                    console.log("Making API request to:", `${API_URL}/api/generate`);
+                    console.log("🔍 Debug info:");
+                    console.log("- API_URL:", API_URL);
+                    console.log("- window.location.origin:", window.location.origin);
+                    console.log("- window.location.href:", window.location.href);
 
-                    const response = await fetch(`${API_URL}/api/generate`, {
+                    const generateUrl = `${API_URL}/api/generate`;
+                    console.log("Making API request to:", generateUrl);
+
+                    const response = await fetch(generateUrl, {
                         method: "POST",
                         headers: {
                             "Content-Type": "application/json",
@@ -699,11 +712,20 @@
             // Test function
             async function testConnection() {
                 try {
-                    console.log("Testing server connection to:", `${API_URL}/api/test`);
-                    const response = await fetch(`${API_URL}/api/test`, {
+                    console.log("🔍 Testing connection...");
+                    console.log("Current window.location:", window.location);
+                    console.log("API_URL being used:", API_URL);
+
+                    const testUrl = `${API_URL}/api/test`;
+                    console.log("Testing server connection to:", testUrl);
+
+                    const response = await fetch(testUrl, {
                         method: 'GET',
                         headers: { 'Accept': 'application/json' }
                     });
+
+                    console.log("Response received:", response.status, response.statusText);
+                    console.log("Response URL:", response.url);
 
                     if (!response.ok) {
                         throw new Error(`HTTP error! status: ${response.status}`);
@@ -711,10 +733,14 @@
 
                     const data = await response.json();
                     console.log("Test successful:", data);
-                    alert("✅ Server connection works! Response: " + JSON.stringify(data));
+                    alert("✅ Server connection works! Response: " + JSON.stringify(data, null, 2));
                 } catch (error) {
                     console.error("Test failed:", error);
-                    alert("❌ Server connection failed: " + error.message + "\nAPI URL: " + API_URL);
+                    console.error("Error details:", {
+                        message: error.message,
+                        stack: error.stack
+                    });
+                    alert(`❌ Server connection failed: ${error.message}\nAPI URL: ${API_URL}\nCheck console for details`);
                 }
             }
 
