@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const { MongoClient } = require('mongodb');
 
 const app = express();
 
@@ -11,6 +12,74 @@ if (process.env.STRIPE_SECRET_KEY) {
   console.log('✅ Stripe initialized successfully');
 } else {
   console.log('⚠️ STRIPE_SECRET_KEY not found - Stripe features disabled');
+}
+
+// MongoDB connection
+let db = null;
+let usersCollection = null;
+
+// Fallback in-memory storage (in case MongoDB fails)
+const userUsage = new Map();
+
+// Initialize MongoDB connection
+async function initDB() {
+  if (process.env.MONGODB_URI) {
+    try {
+      const client = new MongoClient(process.env.MONGODB_URI);
+      await client.connect();
+      db = client.db('shownotes'); // Your database name
+      usersCollection = db.collection('users'); // Your collection name
+      console.log('✅ MongoDB connected successfully');
+    } catch (error) {
+      console.error('❌ MongoDB connection failed:', error);
+    }
+  } else {
+    console.log('⚠️ MONGODB_URI not found - using in-memory storage (will reset on restart)');
+  }
+}
+
+// Helper functions for usage tracking
+async function getUserUsage(userIP) {
+  if (usersCollection) {
+    try {
+      const user = await usersCollection.findOne({ ip: userIP });
+      return user ? user.usageCount : 0;
+    } catch (error) {
+      console.error('Error getting usage:', error);
+      return userUsage.get(userIP) || 0;
+    }
+  }
+  // Fallback to in-memory if MongoDB not available
+  return userUsage.get(userIP) || 0;
+}
+
+async function incrementUserUsage(userIP) {
+  const newCount = await getUserUsage(userIP) + 1;
+
+  if (usersCollection) {
+    try {
+      await usersCollection.updateOne(
+        { ip: userIP },
+        { 
+          $set: { 
+            usageCount: newCount, 
+            lastUsed: new Date(),
+            ip: userIP 
+          } 
+        },
+        { upsert: true } // Create if doesn't exist
+      );
+    } catch (error) {
+      console.error('Error updating usage:', error);
+      // Fallback to in-memory
+      userUsage.set(userIP, newCount);
+    }
+  } else {
+    // Fallback to in-memory if MongoDB not available
+    userUsage.set(userIP, newCount);
+  }
+
+  return newCount;
 }
 
 // Enhanced CORS configuration for Replit
@@ -48,7 +117,8 @@ app.get('/health', (req, res) => {
     host: '0.0.0.0',
     directory: __dirname,
     staticPath: path.join(__dirname, '..'),
-    stripe_enabled: !!stripe
+    stripe_enabled: !!stripe,
+    mongodb_connected: !!usersCollection
   });
 });
 
@@ -65,8 +135,33 @@ app.get('/api/test', (req, res) => {
     platform: process.platform,
     port: PORT,
     host: '0.0.0.0',
-    stripe_enabled: !!stripe
+    stripe_enabled: !!stripe,
+    mongodb_connected: !!usersCollection
   });
+});
+
+// Usage check endpoint
+app.get('/api/usage', async (req, res) => {
+  try {
+    const userIP = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'] || 'unknown';
+    const currentUsage = await getUserUsage(userIP);
+
+    res.json({
+      success: true,
+      usageInfo: {
+        currentUsage: currentUsage,
+        freeLimit: 5,
+        remainingFree: Math.max(0, 5 - currentUsage),
+        requiresPayment: currentUsage >= 5
+      }
+    });
+  } catch (error) {
+    console.error('Error checking usage:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to check usage'
+    });
+  }
 });
 
 // STRIPE CHECKOUT ENDPOINT
@@ -246,14 +341,36 @@ app.get('/cancel', (req, res) => {
   `);
 });
 
-// Main generation endpoint (unchanged)
+// Main generation endpoint with usage tracking
 app.post('/api/generate', async (req, res) => {
   console.log('🤖 Generate endpoint called');
-  console.log('Request headers:', req.headers);
-  console.log('Request body:', req.body);
 
   try {
     const { transcript, tone, contentType } = req.body;
+
+    // Get user identifier - improved for various hosting platforms
+    const userIP = req.ip || 
+                  req.connection.remoteAddress || 
+                  req.headers['x-forwarded-for'] || 
+                  req.headers['x-real-ip'] || 
+                  'unknown';
+    console.log('User IP:', userIP);
+
+    // Get current usage count
+    const currentUsage = await getUserUsage(userIP);
+    console.log(`User ${userIP} current usage: ${currentUsage}`);
+
+    // Check if user has exceeded free limit
+    if (currentUsage >= 5) {
+      console.log('❌ User exceeded free limit, payment required');
+      return res.status(429).json({
+        success: false,
+        error: 'FREE_LIMIT_EXCEEDED',
+        message: 'You have used your 5 free generations. Please upgrade to continue.',
+        usageCount: currentUsage,
+        freeLimit: 5
+      });
+    }
 
     // Enhanced validation
     if (!transcript) {
@@ -277,6 +394,10 @@ app.post('/api/generate', async (req, res) => {
       });
     }
 
+    // Increment usage count BEFORE generating
+    const newUsageCount = await incrementUserUsage(userIP);
+    console.log(`✅ Usage updated: ${userIP} now has ${newUsageCount} uses`);
+
     // Generate mock show notes
     const mockShowNotes = generateMockShowNotes(transcript, tone || 'casual', contentType || 'show-notes');
 
@@ -291,6 +412,12 @@ app.post('/api/generate', async (req, res) => {
         prompt_tokens: Math.floor(transcript.length / 5),
         completion_tokens: Math.floor(mockShowNotes.length / 4)
       },
+      usageInfo: {
+        currentUsage: newUsageCount,
+        freeLimit: 5,
+        remainingFree: Math.max(0, 5 - newUsageCount),
+        requiresPayment: newUsageCount >= 5
+      },
       metadata: {
         tone: tone || 'casual',
         contentType: contentType || 'show-notes',
@@ -298,7 +425,7 @@ app.post('/api/generate', async (req, res) => {
       }
     };
 
-    console.log('✅ Generation successful, response length:', mockShowNotes.length);
+    console.log('✅ Generation successful, remaining free uses:', 5 - newUsageCount);
     res.json(response);
 
   } catch (error) {
@@ -319,7 +446,7 @@ app.get('/', (req, res) => {
   res.sendFile(htmlPath);
 });
 
-// Enhanced mock show notes generator (unchanged)
+// Enhanced mock show notes generator
 function generateMockShowNotes(transcript, tone, contentType) {
   const toneStyles = {
     casual: "Hey everyone! Here's what we covered today:",
@@ -449,19 +576,29 @@ app.use((req, res) => {
 const PORT = process.env.PORT || 3000;
 const HOST = '0.0.0.0';
 
-app.listen(PORT, HOST, () => {
-  console.log(`🚀 Server running successfully on ${HOST}:${PORT}`);
-  console.log(`📂 Backend directory: ${__dirname}`);
-  console.log(`📂 Serving static files from: ${path.join(__dirname, '..')}`);
-  console.log(`🌐 Access your app in Replit's web view!`);
-  console.log(`🔗 API endpoints available:`);
-  console.log(`   GET  /api/test - Test server connection`);
-  console.log(`   POST /api/generate - Generate show notes`);
-  console.log(`   POST /create-checkout-session - Create Stripe checkout`);
-  console.log(`   GET  /success - Payment success page`);
-  console.log(`   GET  /cancel - Payment cancel page`);
-  console.log(`   GET  /health - Health check`);
-  console.log(`   GET  / - Main application`);
-  console.log(`\n⚠️  IMPORTANT: Make sure index.html is in the project root directory`);
-  console.log(`💳 Stripe status: ${stripe ? 'Enabled' : 'Disabled (add STRIPE_SECRET_KEY)'}`);
-});
+// Initialize database and start server
+async function startServer() {
+  await initDB(); // Initialize MongoDB first
+
+  app.listen(PORT, HOST, () => {
+    console.log(`🚀 Server running successfully on ${HOST}:${PORT}`);
+    console.log(`📂 Backend directory: ${__dirname}`);
+    console.log(`📂 Serving static files from: ${path.join(__dirname, '..')}`);
+    console.log(`🌐 Access your app in Replit's web view!`);
+    console.log(`🔗 API endpoints available:`);
+    console.log(`   GET  /api/test - Test server connection`);
+    console.log(`   GET  /api/usage - Check usage count`);
+    console.log(`   POST /api/generate - Generate show notes (with usage tracking)`);
+    console.log(`   POST /create-checkout-session - Create Stripe checkout`);
+    console.log(`   GET  /success - Payment success page`);
+    console.log(`   GET  /cancel - Payment cancel page`);
+    console.log(`   GET  /health - Health check`);
+    console.log(`   GET  / - Main application`);
+    console.log(`\n⚠️  IMPORTANT: Make sure index.html is in the project root directory`);
+    console.log(`💳 Stripe status: ${stripe ? 'Enabled' : 'Disabled (add STRIPE_SECRET_KEY)'}`);
+    console.log(`🗄️  MongoDB status: ${usersCollection ? 'Connected' : 'Disconnected (using fallback storage)'}`);
+  });
+}
+
+// Start the server
+startServer().catch(console.error);
