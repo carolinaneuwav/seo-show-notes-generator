@@ -17,9 +17,7 @@ if (process.env.STRIPE_SECRET_KEY) {
 // MongoDB connection
 let db = null;
 let usersCollection = null;
-
-// Fallback in-memory storage (in case MongoDB fails)
-const userUsage = new Map();
+const userUsage = new Map(); // Fallback storage
 
 // Initialize MongoDB connection
 async function initDB() {
@@ -46,7 +44,7 @@ async function getUserUsage(userIP) {
       return user ? user.usageCount : 0;
     } catch (error) {
       console.error('Error getting usage:', error);
-      return userUsage.get(userIP) || 0;
+      return 0;
     }
   }
   // Fallback to in-memory if MongoDB not available
@@ -54,8 +52,7 @@ async function getUserUsage(userIP) {
 }
 
 async function incrementUserUsage(userIP) {
-  const currentCount = await getUserUsage(userIP);
-  const newCount = currentCount + 1;
+  const newCount = await getUserUsage(userIP) + 1;
 
   if (usersCollection) {
     try {
@@ -342,26 +339,22 @@ app.get('/cancel', (req, res) => {
   `);
 });
 
-// Main generation endpoint with FIXED usage tracking
+// Main generation endpoint with usage tracking
 app.post('/api/generate', async (req, res) => {
   console.log('🤖 Generate endpoint called');
 
   try {
     const { transcript, tone, contentType } = req.body;
 
-    // Get user identifier - improved for various hosting platforms
-    const userIP = req.ip || 
-                  req.connection.remoteAddress || 
-                  req.headers['x-forwarded-for'] || 
-                  req.headers['x-real-ip'] || 
-                  'unknown';
+    // Get user identifier
+    const userIP = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'] || 'unknown';
     console.log('User IP:', userIP);
 
-    // Get current usage count FIRST
+    // Get current usage count
     const currentUsage = await getUserUsage(userIP);
     console.log(`User ${userIP} current usage: ${currentUsage}`);
 
-    // Check if user has ALREADY exceeded free limit (check BEFORE incrementing)
+    // Check if user has exceeded free limit
     if (currentUsage >= 5) {
       console.log('❌ User exceeded free limit, payment required');
       return res.status(429).json({
@@ -395,7 +388,7 @@ app.post('/api/generate', async (req, res) => {
       });
     }
 
-    // Increment usage count AFTER validation and limit check
+    // Increment usage count
     const newUsageCount = await incrementUserUsage(userIP);
     console.log(`✅ Usage updated: ${userIP} now has ${newUsageCount} uses`);
 
@@ -447,7 +440,7 @@ app.get('/', (req, res) => {
   res.sendFile(htmlPath);
 });
 
-// Enhanced mock show notes generator
+// Enhanced mock show notes generator (unchanged)
 function generateMockShowNotes(transcript, tone, contentType) {
   const toneStyles = {
     casual: "Hey everyone! Here's what we covered today:",
@@ -578,9 +571,7 @@ const PORT = process.env.PORT || 3000;
 const HOST = '0.0.0.0';
 
 // Initialize database and start server
-async function startServer() {
-  await initDB(); // Initialize MongoDB first
-
+initDB().then(() => {
   app.listen(PORT, HOST, () => {
     console.log(`🚀 Server running successfully on ${HOST}:${PORT}`);
     console.log(`📂 Backend directory: ${__dirname}`);
@@ -597,9 +588,12 @@ async function startServer() {
     console.log(`   GET  / - Main application`);
     console.log(`\n⚠️  IMPORTANT: Make sure index.html is in the project root directory`);
     console.log(`💳 Stripe status: ${stripe ? 'Enabled' : 'Disabled (add STRIPE_SECRET_KEY)'}`);
-    console.log(`🗄️  MongoDB status: ${usersCollection ? 'Connected' : 'Disconnected (using fallback storage)'}`);
+    console.log(`🗄️  MongoDB status: ${usersCollection ? 'Connected' : 'Using fallback storage'}`);
   });
-}
-
-// Start the server
-startServer().catch(console.error);
+}).catch(error => {
+  console.error('Failed to initialize database:', error);
+  // Still start server even if DB fails
+  app.listen(PORT, HOST, () => {
+    console.log(`🚀 Server running on ${HOST}:${PORT} (DB connection failed, using fallback)`);
+  });
+});
