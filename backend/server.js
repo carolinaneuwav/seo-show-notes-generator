@@ -26,7 +26,7 @@ async function initDB() {
       const client = new MongoClient(process.env.MONGODB_URI);
       await client.connect();
       db = client.db('shownotes'); // Your database name
-      usersCollection = db.collection('users'); // Your collection name
+      usersCollection = db.collection('show'); // Your collection name
       console.log('✅ MongoDB connected successfully');
     } catch (error) {
       console.error('❌ MongoDB connection failed:', error);
