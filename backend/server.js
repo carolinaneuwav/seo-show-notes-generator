@@ -54,7 +54,8 @@ async function getUserUsage(userIP) {
 }
 
 async function incrementUserUsage(userIP) {
-  const newCount = await getUserUsage(userIP) + 1;
+  const currentCount = await getUserUsage(userIP);
+  const newCount = currentCount + 1;
 
   if (usersCollection) {
     try {
@@ -341,7 +342,7 @@ app.get('/cancel', (req, res) => {
   `);
 });
 
-// Main generation endpoint with usage tracking
+// Main generation endpoint with FIXED usage tracking
 app.post('/api/generate', async (req, res) => {
   console.log('🤖 Generate endpoint called');
 
@@ -356,11 +357,11 @@ app.post('/api/generate', async (req, res) => {
                   'unknown';
     console.log('User IP:', userIP);
 
-    // Get current usage count
+    // Get current usage count FIRST
     const currentUsage = await getUserUsage(userIP);
     console.log(`User ${userIP} current usage: ${currentUsage}`);
 
-    // Check if user has exceeded free limit
+    // Check if user has ALREADY exceeded free limit (check BEFORE incrementing)
     if (currentUsage >= 5) {
       console.log('❌ User exceeded free limit, payment required');
       return res.status(429).json({
@@ -394,7 +395,7 @@ app.post('/api/generate', async (req, res) => {
       });
     }
 
-    // Increment usage count BEFORE generating
+    // Increment usage count AFTER validation and limit check
     const newUsageCount = await incrementUserUsage(userIP);
     console.log(`✅ Usage updated: ${userIP} now has ${newUsageCount} uses`);
 
