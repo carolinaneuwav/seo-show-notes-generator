@@ -14,18 +14,20 @@ if (process.env.STRIPE_SECRET_KEY) {
   console.log('⚠️ STRIPE_SECRET_KEY not found - Stripe features disabled');
 }
 
-// MongoDB connection
+// MongoDB connection variables
+let mongoClient = null;
 let db = null;
 let usersCollection = null;
+let mongoConnected = false;
 const userUsage = new Map(); // Fallback storage
 
-// FIXED: Initialize MongoDB connection
+// FIXED: Initialize MongoDB connection with proper error handling and connection state tracking
 async function initDB() {
   console.log('🔄 Initializing MongoDB connection...');
 
   if (!process.env.MONGODB_URI) {
     console.log('❌ MONGODB_URI environment variable not found!');
-    return;
+    return false;
   }
 
   console.log('✅ MONGODB_URI found');
@@ -34,38 +36,44 @@ async function initDB() {
     console.log('🔗 Attempting to connect to MongoDB Atlas...');
 
     // Create MongoDB client with Stable API version
-    const client = new MongoClient(process.env.MONGODB_URI, {
+    mongoClient = new MongoClient(process.env.MONGODB_URI, {
       serverApi: {
         version: ServerApiVersion.v1,
         strict: true,
         deprecationErrors: true,
       },
-      // Add these options for better reliability
-      serverSelectionTimeoutMS: 10000,
-      connectTimeoutMS: 10000,
-      socketTimeoutMS: 30000,
+      // Improved connection options
+      maxPoolSize: 10,
+      serverSelectionTimeoutMS: 15000,
+      connectTimeoutMS: 15000,
+      socketTimeoutMS: 45000,
+      retryWrites: true,
+      retryReads: true
     });
 
     // Connect to MongoDB
-    await client.connect();
+    await mongoClient.connect();
     console.log('🎯 MongoDB client connected successfully');
 
     // Test the connection with ping
-    await client.db('admin').command({ ping: 1 });
+    await mongoClient.db('admin').command({ ping: 1 });
     console.log('🏓 Pinged your deployment. You successfully connected to MongoDB!');
 
-    // FIXED: Use correct database and collection names
-    db = client.db('shownotes');  // Database name
+    // Set up database and collection references
+    db = mongoClient.db('shownotes');
     console.log('📂 Database "shownotes" selected');
 
-    usersCollection = db.collection('users');  // Collection name for users
+    usersCollection = db.collection('users');
     console.log('📋 Collection "users" selected');
 
     // Test collection access
     const testCount = await usersCollection.countDocuments();
     console.log(`📊 Users collection accessible - ${testCount} documents found`);
 
+    // Mark as connected
+    mongoConnected = true;
     console.log('✅ MongoDB fully initialized and ready!');
+    return true;
 
   } catch (error) {
     console.error('❌ MongoDB connection failed:');
@@ -83,22 +91,27 @@ async function initDB() {
     }
 
     console.log('⚠️  Falling back to in-memory storage');
+    mongoConnected = false;
+    return false;
   }
 }
 
-// FIXED: Helper functions for usage tracking
+// FIXED: Helper functions with better connection state checking
 async function getUserUsage(userIP) {
   console.log(`🔍 getUserUsage called for IP: ${userIP}`);
+  console.log(`🔌 MongoDB connection status: ${mongoConnected}`);
 
-  if (usersCollection) {
+  if (mongoConnected && usersCollection) {
     try {
       console.log('📊 Querying MongoDB for user...');
       const user = await usersCollection.findOne({ ip: userIP });
-      console.log('📊 MongoDB query result:', user ? `Found user with ${user.usageCount} uses` : 'No user found');
-      return user ? user.usageCount : 0;
+      const usage = user ? user.usageCount : 0;
+      console.log('📊 MongoDB query result:', user ? `Found user with ${usage} uses` : 'No user found');
+      return usage;
     } catch (error) {
       console.error('❌ Error querying MongoDB:', error.message);
-      console.log('🔄 Falling back to in-memory storage');
+      console.log('🔄 MongoDB error - falling back to in-memory storage');
+      mongoConnected = false; // Mark as disconnected for future requests
       const memoryUsage = userUsage.get(userIP) || 0;
       console.log(`💾 In-memory storage result: ${memoryUsage} uses`);
       return memoryUsage;
@@ -116,7 +129,7 @@ async function incrementUserUsage(userIP) {
   const newCount = currentCount + 1;
   console.log(`📈 Incrementing usage for ${userIP}: ${currentCount} → ${newCount}`);
 
-  if (usersCollection) {
+  if (mongoConnected && usersCollection) {
     try {
       console.log('💾 Updating MongoDB...');
       const result = await usersCollection.updateOne(
@@ -135,19 +148,21 @@ async function incrementUserUsage(userIP) {
         modified: result.modifiedCount,
         upserted: !!result.upsertedId
       });
+      return newCount;
     } catch (error) {
       console.error('❌ Error updating MongoDB:', error.message);
-      console.log('🔄 Falling back to in-memory storage');
+      console.log('🔄 MongoDB error - falling back to in-memory storage');
+      mongoConnected = false; // Mark as disconnected
       userUsage.set(userIP, newCount);
       console.log(`💾 Updated in-memory storage: ${userIP} → ${newCount}`);
+      return newCount;
     }
   } else {
     console.log('⚠️  No MongoDB connection - using in-memory storage');
     userUsage.set(userIP, newCount);
     console.log(`💾 Updated in-memory storage: ${userIP} → ${newCount}`);
+    return newCount;
   }
-
-  return newCount;
 }
 
 // Enhanced CORS configuration for Replit
@@ -185,15 +200,16 @@ app.get('/health', (req, res) => {
     directory: __dirname,
     staticPath: path.join(__dirname, '..'),
     stripe_enabled: !!stripe,
-    mongodb_connected: !!usersCollection
+    mongodb_connected: mongoConnected && !!usersCollection
   });
 });
 
-// ADDED: MongoDB connection test endpoint
+// FIXED: MongoDB connection test endpoint with better error handling
 app.get('/api/test-mongo', async (req, res) => {
   console.log('🧪 Testing MongoDB connection...');
 
   const result = {
+    current_connection_status: mongoConnected,
     step1_env_check: !!process.env.MONGODB_URI,
     step2_uri_format: null,
     step3_connection: null,
@@ -218,52 +234,58 @@ app.get('/api/test-mongo', async (req, res) => {
       result.errors.push('MONGODB_URI should start with mongodb+srv:// or mongodb://');
     }
 
-    // Step 3: Test connection
-    console.log('🔗 Attempting MongoDB connection...');
-    const testClient = new MongoClient(uri, {
-      serverSelectionTimeoutMS: 5000,
-      connectTimeoutMS: 5000,
-    });
+    // Step 3: Test connection (use existing connection if available)
+    if (mongoConnected && mongoClient) {
+      console.log('🔗 Using existing MongoDB connection...');
+      result.step3_connection = true;
+    } else {
+      console.log('🔗 Creating new test connection...');
+      const testClient = new MongoClient(uri, {
+        serverSelectionTimeoutMS: 10000,
+        connectTimeoutMS: 10000,
+      });
+      await testClient.connect();
+      result.step3_connection = true;
+      await testClient.close();
+    }
+    console.log('✅ MongoDB connection test successful');
 
-    await testClient.connect();
-    result.step3_connection = true;
-    console.log('✅ MongoDB connection successful');
+    // Step 4-7: Test database operations if we have a connection
+    if (mongoConnected && db && usersCollection) {
+      // Step 4: Test database access
+      await db.admin().ping();
+      result.step4_database = true;
+      console.log('✅ Database access successful');
 
-    // Step 4: Test database access
-    const testDb = testClient.db('shownotes');
-    await testDb.admin().ping();
-    result.step4_database = true;
-    console.log('✅ Database access successful');
+      // Step 5: Test collection access
+      const count = await usersCollection.countDocuments();
+      result.step5_collection = true;
+      result.collection_count = count;
+      console.log(`✅ Collection access successful - ${count} documents`);
 
-    // Step 5: Test collection access
-    const testCollection = testDb.collection('users');
-    const count = await testCollection.countDocuments();
-    result.step5_collection = true;
-    result.collection_count = count;
-    console.log(`✅ Collection access successful - ${count} documents`);
+      // Step 6: Test write
+      const testDoc = {
+        ip: 'test-' + Date.now(),
+        usageCount: 1,
+        lastUsed: new Date(),
+        test: true
+      };
+      await usersCollection.insertOne(testDoc);
+      result.step6_write_test = true;
+      console.log('✅ Write test successful');
 
-    // Step 6: Test write
-    const testDoc = {
-      ip: 'test-' + Date.now(),
-      usageCount: 1,
-      lastUsed: new Date(),
-      test: true
-    };
-    await testCollection.insertOne(testDoc);
-    result.step6_write_test = true;
-    console.log('✅ Write test successful');
+      // Step 7: Test read
+      const readDoc = await usersCollection.findOne({ _id: testDoc._id });
+      result.step7_read_test = !!readDoc;
+      console.log('✅ Read test successful');
 
-    // Step 7: Test read
-    const readDoc = await testCollection.findOne({ _id: testDoc._id });
-    result.step7_read_test = !!readDoc;
-    console.log('✅ Read test successful');
-
-    // Cleanup
-    await testCollection.deleteOne({ _id: testDoc._id });
-    await testClient.close();
-
-    result.status = 'ALL_TESTS_PASSED';
-    console.log('🎉 All MongoDB tests passed!');
+      // Cleanup
+      await usersCollection.deleteOne({ _id: testDoc._id });
+      result.status = 'ALL_TESTS_PASSED';
+      console.log('🎉 All MongoDB tests passed!');
+    } else {
+      result.errors.push('MongoDB connection not established for full testing');
+    }
 
   } catch (error) {
     result.errors.push(`Error: ${error.message}`);
@@ -292,14 +314,16 @@ app.get('/api/test', (req, res) => {
     port: PORT,
     host: '0.0.0.0',
     stripe_enabled: !!stripe,
-    mongodb_connected: !!usersCollection
+    mongodb_connected: mongoConnected && !!usersCollection
   });
 });
 
-// Usage check endpoint
+// FIXED: Usage check endpoint with connection status
 app.get('/api/usage', async (req, res) => {
   try {
     const userIP = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'] || 'unknown';
+    console.log(`📊 Usage check for IP: ${userIP}, MongoDB connected: ${mongoConnected}`);
+
     const currentUsage = await getUserUsage(userIP);
 
     res.json({
@@ -309,6 +333,11 @@ app.get('/api/usage', async (req, res) => {
         freeLimit: 5,
         remainingFree: Math.max(0, 5 - currentUsage),
         requiresPayment: currentUsage >= 5
+      },
+      debug: {
+        mongodb_connected: mongoConnected,
+        storage_type: mongoConnected ? 'mongodb' : 'memory',
+        user_ip: userIP
       }
     });
   } catch (error) {
@@ -455,7 +484,7 @@ app.get('/cancel', (req, res) => {
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
           body { 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segone UI", Roboto, sans-serif; 
             text-align: center; 
             padding: 50px 20px; 
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -497,9 +526,10 @@ app.get('/cancel', (req, res) => {
   `);
 });
 
-// FIXED: Main generation endpoint with proper usage limiting
+// FIXED: Main generation endpoint with better MongoDB connection handling
 app.post('/api/generate', async (req, res) => {
   console.log('🤖 Generate endpoint called');
+  console.log(`🔌 MongoDB connection status: ${mongoConnected}`);
 
   try {
     const { transcript, tone, contentType } = req.body;
@@ -508,11 +538,11 @@ app.post('/api/generate', async (req, res) => {
     const userIP = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'] || 'unknown';
     console.log('User IP:', userIP);
 
-    // FIXED: Get current usage count FIRST
+    // Get current usage count FIRST
     const currentUsage = await getUserUsage(userIP);
-    console.log(`User ${userIP} current usage: ${currentUsage}`);
+    console.log(`User ${userIP} current usage: ${currentUsage} (from ${mongoConnected ? 'MongoDB' : 'memory'})`);
 
-    // FIXED: Check if user has ALREADY exceeded free limit (check BEFORE incrementing)
+    // Check if user has ALREADY exceeded free limit (check BEFORE incrementing)
     if (currentUsage >= 5) {
       console.log('❌ User exceeded free limit, payment required');
       return res.status(429).json({
@@ -520,7 +550,11 @@ app.post('/api/generate', async (req, res) => {
         error: 'FREE_LIMIT_EXCEEDED',
         message: 'You have used your 5 free generations. Please upgrade to continue.',
         usageCount: currentUsage,
-        freeLimit: 5
+        freeLimit: 5,
+        debug: {
+          mongodb_connected: mongoConnected,
+          storage_type: mongoConnected ? 'mongodb' : 'memory'
+        }
       });
     }
 
@@ -546,9 +580,9 @@ app.post('/api/generate', async (req, res) => {
       });
     }
 
-    // FIXED: Increment usage count AFTER validation and limit check
+    // Increment usage count AFTER validation and limit check
     const newUsageCount = await incrementUserUsage(userIP);
-    console.log(`✅ Usage updated: ${userIP} now has ${newUsageCount} uses`);
+    console.log(`✅ Usage updated: ${userIP} now has ${newUsageCount} uses (stored in ${mongoConnected ? 'MongoDB' : 'memory'})`);
 
     // Generate mock show notes
     const mockShowNotes = generateMockShowNotes(transcript, tone || 'casual', contentType || 'show-notes');
@@ -569,6 +603,11 @@ app.post('/api/generate', async (req, res) => {
         freeLimit: 5,
         remainingFree: Math.max(0, 5 - newUsageCount),
         requiresPayment: newUsageCount >= 5
+      },
+      debug: {
+        mongodb_connected: mongoConnected,
+        storage_type: mongoConnected ? 'mongodb' : 'memory',
+        user_ip: userIP
       },
       metadata: {
         tone: tone || 'casual',
@@ -728,10 +767,20 @@ app.use((req, res) => {
 const PORT = process.env.PORT || 3000;
 const HOST = '0.0.0.0';
 
-// Initialize database and start server
+// FIXED: Initialize database and start server with proper sequencing
 async function startServer() {
-  await initDB(); // Initialize MongoDB first
+  console.log('🚀 Starting server initialization...');
 
+  // Try to initialize MongoDB connection
+  const mongoSuccess = await initDB();
+
+  if (mongoSuccess) {
+    console.log('✅ MongoDB initialization successful');
+  } else {
+    console.log('⚠️  MongoDB initialization failed - using in-memory storage');
+  }
+
+  // Start the server
   app.listen(PORT, HOST, () => {
     console.log(`🚀 Server running successfully on ${HOST}:${PORT}`);
     console.log(`📂 Backend directory: ${__dirname}`);
@@ -749,9 +798,51 @@ async function startServer() {
     console.log(`   GET  / - Main application`);
     console.log(`\n⚠️  IMPORTANT: Make sure index.html is in the project root directory`);
     console.log(`💳 Stripe status: ${stripe ? 'Enabled' : 'Disabled (add STRIPE_SECRET_KEY)'}`);
-    console.log(`🗄️  MongoDB status: ${usersCollection ? 'Connected' : 'Disconnected (using fallback storage)'}`);
+    console.log(`🗄️  MongoDB status: ${mongoConnected ? 'Connected and Ready' : 'Disconnected (using fallback storage)'}`);
+
+    // Additional MongoDB connection attempt after server start (for cases where initial connection failed)
+    if (!mongoConnected) {
+      console.log('\n🔄 Attempting MongoDB reconnection in background...');
+      setTimeout(async () => {
+        console.log('🔄 Retrying MongoDB connection...');
+        const retrySuccess = await initDB();
+        if (retrySuccess) {
+          console.log('✅ MongoDB reconnection successful!');
+        } else {
+          console.log('⚠️  MongoDB reconnection failed - will continue with in-memory storage');
+        }
+      }, 5000); // Retry after 5 seconds
+    }
   });
 }
 
-// Start the server
-startServer().catch(console.error);
+// Graceful shutdown handling
+process.on('SIGINT', async () => {
+  console.log('\n🛑 Received SIGINT, shutting down gracefully...');
+
+  if (mongoClient) {
+    try {
+      await mongoClient.close();
+      console.log('✅ MongoDB connection closed');
+    } catch (error) {
+      console.error('❌ Error closing MongoDB connection:', error);
+    }
+  }
+
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  console.log('\n🛑 Received SIGTERM, shutting down gracefully...');
+
+  if (mongoClient) {
+    try {
+      await mongoClient.close();
+      console.log('✅ MongoDB connection closed');
+    } catch (error) {
+      console.error('❌ Error closing MongoDB connection:', error);
+    }
+  }
+
+  process.exit(0);
+});
