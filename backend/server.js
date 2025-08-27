@@ -17,96 +17,107 @@ if (process.env.STRIPE_SECRET_KEY) {
 // MongoDB connection
 let db = null;
 let usersCollection = null;
-const userUsage = new Map(); // Fallback storage
+const userUsage = new Map(); // Fallback storage - ALWAYS initialize this
+
+// FIXED: Better IP extraction function
+function getUserIP(req) {
+  // Get IP from various possible headers (in order of preference)
+  const possibleIPs = [
+    req.headers['x-forwarded-for'],
+    req.headers['x-real-ip'],
+    req.headers['x-client-ip'],
+    req.connection.remoteAddress,
+    req.socket.remoteAddress,
+    req.ip
+  ].filter(ip => ip && ip !== 'unknown');
+
+  let userIP = possibleIPs[0] || 'fallback-ip';
+
+  // Clean up the IP (remove port if present, take first IP if comma-separated)
+  if (userIP.includes(',')) {
+    userIP = userIP.split(',')[0].trim();
+  }
+  if (userIP.includes(':') && userIP.split(':').length === 2) {
+    userIP = userIP.split(':')[0];
+  }
+
+  // For development, create unique session identifiers
+  if (userIP === '::1' || userIP === '127.0.0.1' || userIP.startsWith('10.') || userIP.startsWith('192.168.')) {
+    // In development, use a combination of IP and user agent for uniqueness
+    const userAgent = req.headers['user-agent'] || 'unknown';
+    userIP = `dev-${userIP}-${Buffer.from(userAgent).toString('base64').slice(0, 8)}`;
+  }
+
+  console.log(`🔍 User IP resolved: ${userIP} (from ${req.headers['x-forwarded-for'] || req.connection.remoteAddress || 'unknown'})`);
+  return userIP;
+}
 
 // FIXED: Initialize MongoDB connection
 async function initDB() {
   console.log('🔄 Initializing MongoDB connection...');
 
   if (!process.env.MONGODB_URI) {
-    console.log('❌ MONGODB_URI environment variable not found!');
+    console.log('❌ MONGODB_URI environment variable not found! Using in-memory storage.');
     return;
   }
 
-  console.log('✅ MONGODB_URI found');
+  console.log('✅ MONGODB_URI found, attempting connection...');
 
   try {
-    console.log('🔗 Attempting to connect to MongoDB Atlas...');
-
-    // Create MongoDB client with Stable API version
     const client = new MongoClient(process.env.MONGODB_URI, {
       serverApi: {
         version: ServerApiVersion.v1,
         strict: true,
         deprecationErrors: true,
       },
-      // Add these options for better reliability
       serverSelectionTimeoutMS: 10000,
       connectTimeoutMS: 10000,
       socketTimeoutMS: 30000,
     });
 
-    // Connect to MongoDB
     await client.connect();
     console.log('🎯 MongoDB client connected successfully');
 
-    // Test the connection with ping
     await client.db('admin').command({ ping: 1 });
-    console.log('🏓 Pinged your deployment. You successfully connected to MongoDB!');
+    console.log('🏓 MongoDB ping successful!');
 
-    // FIXED: Use correct database and collection names
-    db = client.db('shownotes');  // Database name
-    console.log('📂 Database "shownotes" selected');
+    db = client.db('shownotes');
+    usersCollection = db.collection('users');
 
-    usersCollection = db.collection('users');  // Collection name for users
-    console.log('📋 Collection "users" selected');
-
-    // Test collection access
     const testCount = await usersCollection.countDocuments();
     console.log(`📊 Users collection accessible - ${testCount} documents found`);
-
     console.log('✅ MongoDB fully initialized and ready!');
 
   } catch (error) {
     console.error('❌ MongoDB connection failed:');
-    console.error('   Error type:', error.name);
-    console.error('   Error message:', error.message);
-
-    if (error.message.includes('authentication')) {
-      console.error('🔐 Authentication issue - check your username/password in MONGODB_URI');
-    }
-    if (error.message.includes('network')) {
-      console.error('🌐 Network issue - check your IP whitelist in MongoDB Atlas');
-    }
-    if (error.message.includes('timeout')) {
-      console.error('⏱️  Timeout issue - check your network connection');
-    }
-
+    console.error('   Error:', error.message);
     console.log('⚠️  Falling back to in-memory storage');
+    // Don't set usersCollection, let it remain null for fallback
   }
 }
 
-// FIXED: Helper functions for usage tracking
+// FIXED: Helper functions for usage tracking with better logging
 async function getUserUsage(userIP) {
   console.log(`🔍 getUserUsage called for IP: ${userIP}`);
 
-  if (usersCollection) {
-    try {
+  try {
+    if (usersCollection) {
       console.log('📊 Querying MongoDB for user...');
       const user = await usersCollection.findOne({ ip: userIP });
-      console.log('📊 MongoDB query result:', user ? `Found user with ${user.usageCount} uses` : 'No user found');
-      return user ? user.usageCount : 0;
-    } catch (error) {
-      console.error('❌ Error querying MongoDB:', error.message);
-      console.log('🔄 Falling back to in-memory storage');
+      const usage = user ? user.usageCount : 0;
+      console.log(`📊 MongoDB result for ${userIP}: ${usage} uses`);
+      return usage;
+    } else {
+      console.log('⚠️  No MongoDB connection - using in-memory storage');
       const memoryUsage = userUsage.get(userIP) || 0;
-      console.log(`💾 In-memory storage result: ${memoryUsage} uses`);
+      console.log(`💾 In-memory storage result for ${userIP}: ${memoryUsage} uses`);
       return memoryUsage;
     }
-  } else {
-    console.log('⚠️  No MongoDB connection - using in-memory storage');
+  } catch (error) {
+    console.error('❌ Error getting user usage:', error.message);
+    console.log('🔄 Falling back to in-memory storage');
     const memoryUsage = userUsage.get(userIP) || 0;
-    console.log(`💾 In-memory storage result: ${memoryUsage} uses`);
+    console.log(`💾 Fallback in-memory storage result for ${userIP}: ${memoryUsage} uses`);
     return memoryUsage;
   }
 }
@@ -116,8 +127,8 @@ async function incrementUserUsage(userIP) {
   const newCount = currentCount + 1;
   console.log(`📈 Incrementing usage for ${userIP}: ${currentCount} → ${newCount}`);
 
-  if (usersCollection) {
-    try {
+  try {
+    if (usersCollection) {
       console.log('💾 Updating MongoDB...');
       const result = await usersCollection.updateOne(
         { ip: userIP },
@@ -130,25 +141,63 @@ async function incrementUserUsage(userIP) {
         },
         { upsert: true }
       );
-      console.log('✅ MongoDB update result:', {
-        matched: result.matchedCount,
-        modified: result.modifiedCount,
-        upserted: !!result.upsertedId
-      });
-    } catch (error) {
-      console.error('❌ Error updating MongoDB:', error.message);
-      console.log('🔄 Falling back to in-memory storage');
-      userUsage.set(userIP, newCount);
-      console.log(`💾 Updated in-memory storage: ${userIP} → ${newCount}`);
+      console.log(`✅ MongoDB update successful for ${userIP}: ${newCount} uses`);
+    } else {
+      throw new Error('No MongoDB connection');
     }
-  } else {
-    console.log('⚠️  No MongoDB connection - using in-memory storage');
+  } catch (error) {
+    console.error('❌ Error updating MongoDB:', error.message);
+    console.log('🔄 Using in-memory storage for increment');
     userUsage.set(userIP, newCount);
-    console.log(`💾 Updated in-memory storage: ${userIP} → ${newCount}`);
+    console.log(`💾 Updated in-memory storage: ${userIP} → ${newCount} uses`);
   }
 
   return newCount;
 }
+
+// FIXED: Add debug endpoint to check current storage state
+app.get('/api/debug-usage', async (req, res) => {
+  const userIP = getUserIP(req);
+
+  try {
+    const currentUsage = await getUserUsage(userIP);
+
+    // Get all users from memory for debugging
+    const memoryUsers = Array.from(userUsage.entries()).map(([ip, count]) => ({ ip, count }));
+
+    // Try to get MongoDB users
+    let mongoUsers = [];
+    if (usersCollection) {
+      try {
+        mongoUsers = await usersCollection.find({}).toArray();
+      } catch (e) {
+        mongoUsers = [{ error: e.message }];
+      }
+    }
+
+    res.json({
+      success: true,
+      debug: {
+        yourIP: userIP,
+        yourCurrentUsage: currentUsage,
+        mongoDBConnected: !!usersCollection,
+        inMemoryUsers: memoryUsers,
+        mongoUsers: mongoUsers.slice(0, 10), // Limit to first 10 for debugging
+        headers: {
+          'x-forwarded-for': req.headers['x-forwarded-for'],
+          'x-real-ip': req.headers['x-real-ip'],
+          'user-agent': req.headers['user-agent']?.substring(0, 50) + '...'
+        }
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      yourIP: userIP
+    });
+  }
+});
 
 // Enhanced CORS configuration for Replit
 app.use(cors({
@@ -174,8 +223,8 @@ app.use((req, res, next) => {
   next();
 });
 
-// CRITICAL: Define PORT before using it
 const PORT = process.env.PORT || 3000;
+const HOST = '0.0.0.0';
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -184,649 +233,91 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     port: PORT,
-    host: '0.0.0.0',
+    host: HOST,
     directory: __dirname,
     staticPath: path.join(__dirname, '..'),
     stripe_enabled: !!stripe,
-    mongodb_connected: !!usersCollection
+    mongodb_connected: !!usersCollection,
+    inMemoryUsers: userUsage.size
   });
-});
-
-// NEW: Payment page route
-app.get('/upgrade', (req, res) => {
-  console.log('💳 Upgrade page requested');
-
-  res.send(`
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Upgrade to Premium - Show Notes Generator</title>
-        <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { 
-                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                min-height: 100vh;
-                padding: 20px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            }
-            .container {
-                background: white;
-                border-radius: 20px;
-                padding: 40px;
-                max-width: 800px;
-                width: 100%;
-                box-shadow: 0 20px 40px rgba(0,0,0,0.15);
-                text-align: center;
-            }
-            .title {
-                color: #333;
-                font-size: 2.5rem;
-                margin-bottom: 10px;
-                font-weight: 700;
-            }
-            .subtitle {
-                color: #666;
-                font-size: 1.2rem;
-                margin-bottom: 40px;
-            }
-            .limit-message {
-                background: linear-gradient(135deg, #ff6b6b, #ee5a24);
-                color: white;
-                padding: 20px;
-                border-radius: 10px;
-                margin-bottom: 40px;
-                font-size: 1.1rem;
-            }
-            .plans {
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 30px;
-                margin-bottom: 40px;
-            }
-            @media (max-width: 768px) {
-                .plans { grid-template-columns: 1fr; }
-                .title { font-size: 2rem; }
-            }
-            .plan {
-                border: 2px solid #e0e0e0;
-                border-radius: 15px;
-                padding: 30px;
-                transition: all 0.3s ease;
-                position: relative;
-            }
-            .plan:hover {
-                border-color: #667eea;
-                transform: translateY(-5px);
-                box-shadow: 0 10px 25px rgba(102, 126, 234, 0.15);
-            }
-            .plan.popular {
-                border-color: #667eea;
-                transform: scale(1.05);
-                box-shadow: 0 10px 25px rgba(102, 126, 234, 0.2);
-            }
-            .popular-badge {
-                position: absolute;
-                top: -10px;
-                left: 50%;
-                transform: translateX(-50%);
-                background: #667eea;
-                color: white;
-                padding: 5px 15px;
-                border-radius: 15px;
-                font-size: 0.8rem;
-                font-weight: 600;
-            }
-            .plan-name {
-                font-size: 1.5rem;
-                font-weight: 600;
-                color: #333;
-                margin-bottom: 10px;
-            }
-            .plan-price {
-                font-size: 2rem;
-                font-weight: 700;
-                color: #667eea;
-                margin-bottom: 20px;
-            }
-            .plan-features {
-                list-style: none;
-                margin-bottom: 30px;
-            }
-            .plan-features li {
-                padding: 8px 0;
-                color: #666;
-                position: relative;
-                padding-left: 25px;
-            }
-            .plan-features li:before {
-                content: "✓";
-                position: absolute;
-                left: 0;
-                color: #4CAF50;
-                font-weight: bold;
-            }
-            .btn {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                padding: 15px 30px;
-                border: none;
-                border-radius: 8px;
-                font-size: 1rem;
-                font-weight: 600;
-                cursor: pointer;
-                width: 100%;
-                transition: all 0.3s ease;
-                text-decoration: none;
-                display: inline-block;
-            }
-            .btn:hover {
-                transform: translateY(-2px);
-                box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
-            }
-            .btn:disabled {
-                opacity: 0.6;
-                cursor: not-allowed;
-            }
-            .back-link {
-                color: #667eea;
-                text-decoration: none;
-                margin-top: 20px;
-                display: inline-block;
-                font-weight: 500;
-            }
-            .back-link:hover {
-                text-decoration: underline;
-            }
-            .loading {
-                display: none;
-                color: #667eea;
-                font-weight: 500;
-            }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1 class="title">🚀 Upgrade to Premium</h1>
-            <p class="subtitle">Unlock unlimited show notes generation</p>
-
-            <div class="limit-message">
-                <strong>🛑 You've reached your free limit!</strong><br>
-                You've used all 5 free generations. Choose a plan to continue creating amazing show notes.
-            </div>
-
-            <div class="plans">
-                <div class="plan">
-                    <h3 class="plan-name">Creator Plan</h3>
-                    <div class="plan-price">€5<span style="font-size: 1rem; font-weight: 400;">/month</span></div>
-                    <ul class="plan-features">
-                        <li>Unlimited show notes generation</li>
-                        <li>All tone options</li>
-                        <li>Social media snippets</li>
-                        <li>Priority support</li>
-                        <li>Advanced formatting</li>
-                    </ul>
-                    <button class="btn" onclick="subscribeToPlan('creator')" id="creator-btn">
-                        Choose Creator Plan
-                    </button>
-                </div>
-
-                <div class="plan popular">
-                    <div class="popular-badge">Most Popular</div>
-                    <h3 class="plan-name">Pro Plan</h3>
-                    <div class="plan-price">€15<span style="font-size: 1rem; font-weight: 400;">/month</span></div>
-                    <ul class="plan-features">
-                        <li>Everything in Creator</li>
-                        <li>Custom templates</li>
-                        <li>API access</li>
-                        <li>White-label options</li>
-                        <li>Priority processing</li>
-                        <li>Advanced analytics</li>
-                    </ul>
-                    <button class="btn" onclick="subscribeToPlan('pro')" id="pro-btn">
-                        Choose Pro Plan
-                    </button>
-                </div>
-            </div>
-
-            <p class="loading" id="loading">Creating secure checkout session...</p>
-
-            <a href="/" class="back-link">← Back to Generator</a>
-        </div>
-
-        <script>
-            async function subscribeToPlan(plan) {
-                console.log('Subscribing to plan:', plan);
-
-                // Show loading state
-                document.getElementById('loading').style.display = 'block';
-                document.getElementById(plan + '-btn').disabled = true;
-                document.getElementById(plan + '-btn').textContent = 'Processing...';
-
-                try {
-                    const response = await fetch('/create-checkout-session', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({ plan: plan })
-                    });
-
-                    const data = await response.json();
-                    console.log('Checkout response:', data);
-
-                    if (data.success && data.url) {
-                        console.log('Redirecting to:', data.url);
-                        window.location.href = data.url;
-                    } else {
-                        throw new Error(data.error || 'Failed to create checkout session');
-                    }
-                } catch (error) {
-                    console.error('Subscription error:', error);
-                    alert('Sorry, there was an error processing your request. Please try again.');
-
-                    // Reset button state
-                    document.getElementById('loading').style.display = 'none';
-                    document.getElementById(plan + '-btn').disabled = false;
-                    document.getElementById(plan + '-btn').textContent = plan === 'creator' ? 'Choose Creator Plan' : 'Choose Pro Plan';
-                }
-            }
-        </script>
-    </body>
-    </html>
-  `);
-});
-
-// ADDED: MongoDB connection test endpoint
-app.get('/api/test-mongo', async (req, res) => {
-  console.log('🧪 Testing MongoDB connection...');
-
-  const result = {
-    step1_env_check: !!process.env.MONGODB_URI,
-    step2_uri_format: null,
-    step3_connection: null,
-    step4_database: null,
-    step5_collection: null,
-    step6_write_test: null,
-    step7_read_test: null,
-    errors: []
-  };
-
-  try {
-    // Step 1: Check environment variable
-    if (!process.env.MONGODB_URI) {
-      result.errors.push('MONGODB_URI environment variable not set');
-      return res.json(result);
-    }
-
-    // Step 2: Check URI format
-    const uri = process.env.MONGODB_URI;
-    result.step2_uri_format = uri.startsWith('mongodb+srv://') || uri.startsWith('mongodb://');
-    if (!result.step2_uri_format) {
-      result.errors.push('MONGODB_URI should start with mongodb+srv:// or mongodb://');
-    }
-
-    // Step 3: Test connection
-    console.log('🔗 Attempting MongoDB connection...');
-    const testClient = new MongoClient(uri, {
-      serverSelectionTimeoutMS: 5000,
-      connectTimeoutMS: 5000,
-    });
-
-    await testClient.connect();
-    result.step3_connection = true;
-    console.log('✅ MongoDB connection successful');
-
-    // Step 4: Test database access
-    const testDb = testClient.db('shownotes');
-    await testDb.admin().ping();
-    result.step4_database = true;
-    console.log('✅ Database access successful');
-
-    // Step 5: Test collection access
-    const testCollection = testDb.collection('users');
-    const count = await testCollection.countDocuments();
-    result.step5_collection = true;
-    result.collection_count = count;
-    console.log(`✅ Collection access successful - ${count} documents`);
-
-    // Step 6: Test write
-    const testDoc = {
-      ip: 'test-' + Date.now(),
-      usageCount: 1,
-      lastUsed: new Date(),
-      test: true
-    };
-    await testCollection.insertOne(testDoc);
-    result.step6_write_test = true;
-    console.log('✅ Write test successful');
-
-    // Step 7: Test read
-    const readDoc = await testCollection.findOne({ _id: testDoc._id });
-    result.step7_read_test = !!readDoc;
-    console.log('✅ Read test successful');
-
-    // Cleanup
-    await testCollection.deleteOne({ _id: testDoc._id });
-    await testClient.close();
-
-    result.status = 'ALL_TESTS_PASSED';
-    console.log('🎉 All MongoDB tests passed!');
-
-  } catch (error) {
-    result.errors.push(`Error: ${error.message}`);
-    result.error_details = {
-      name: error.name,
-      code: error.code,
-      codeName: error.codeName
-    };
-    console.error('❌ MongoDB test failed:', error);
-  }
-
-  res.json(result);
 });
 
 // Test endpoint
 app.get('/api/test', (req, res) => {
   console.log('✅ Test endpoint called successfully');
+  const userIP = getUserIP(req);
+
   res.json({
     success: true,
     message: 'Server is working perfectly!',
     timestamp: new Date().toISOString(),
+    yourIP: userIP,
     directory: __dirname,
     staticDirectory: path.join(__dirname, '..'),
     nodeVersion: process.version,
     platform: process.platform,
     port: PORT,
-    host: '0.0.0.0',
+    host: HOST,
     stripe_enabled: !!stripe,
-    mongodb_connected: !!usersCollection
+    mongodb_connected: !!usersCollection,
+    inMemoryUsersCount: userUsage.size
   });
 });
 
-// Usage check endpoint
+// FIXED: Usage check endpoint with better error handling
 app.get('/api/usage', async (req, res) => {
   try {
-    const userIP = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'] || 'unknown';
+    const userIP = getUserIP(req);
+    console.log(`📊 Usage check requested for IP: ${userIP}`);
+
     const currentUsage = await getUserUsage(userIP);
+    console.log(`📊 Current usage for ${userIP}: ${currentUsage}/5`);
+
+    const usageInfo = {
+      currentUsage: currentUsage,
+      freeLimit: 5,
+      remainingFree: Math.max(0, 5 - currentUsage),
+      requiresPayment: currentUsage >= 5
+    };
+
+    console.log(`📊 Usage info for ${userIP}:`, usageInfo);
 
     res.json({
       success: true,
-      usageInfo: {
-        currentUsage: currentUsage,
-        freeLimit: 5,
-        remainingFree: Math.max(0, 5 - currentUsage),
-        requiresPayment: currentUsage >= 5
+      usageInfo: usageInfo,
+      debug: {
+        userIP: userIP,
+        mongoConnected: !!usersCollection,
+        storageType: usersCollection ? 'mongodb' : 'memory'
       }
     });
   } catch (error) {
-    console.error('Error checking usage:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to check usage'
-    });
-  }
-});
+    console.error('❌ Error checking usage:', error);
 
-// STRIPE CHECKOUT ENDPOINT
-app.post('/create-checkout-session', async (req, res) => {
-  console.log('💳 Stripe checkout session requested');
-
-  if (!stripe) {
-    return res.status(500).json({
-      success: false,
-      error: 'Stripe not configured. Please set STRIPE_SECRET_KEY environment variable.'
-    });
-  }
-
-  try {
-    const { plan } = req.body;
-    console.log('Plan requested:', plan);
-
-    // Define your plans - YOU NEED TO REPLACE THESE WITH REAL STRIPE PRICE IDs
-    const plans = {
-      creator: {
-        price_id: process.env.STRIPE_CREATOR_PRICE_ID || "price_1RyHyIDF11JZQS5lv1GdG3Ef", // Replace with real Stripe Price ID
-        name: 'Creator Plan - €5/month'
-      },
-      pro: {
-        price_id: process.env.STRIPE_PRO_PRICE_ID || 'price_1RyI0IDF11JZQS5l914rSyO0', // Replace with real Stripe Price ID
-        name: 'Pro Plan - €15/month'
-      }
-    };
-
-    if (!plans[plan]) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Invalid plan selected' 
-      });
-    }
-
-    // Get the base URL for redirects
-    const baseUrl = req.headers.origin || `${req.protocol}://${req.get('host')}`;
-    console.log('Base URL for redirects:', baseUrl);
-
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      line_items: [
-        {
-          price: plans[plan].price_id,
-          quantity: 1,
-        },
-      ],
-      mode: 'subscription',
-      success_url: `${baseUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${baseUrl}/upgrade`,  // Return to upgrade page on cancel
-      metadata: {
-        plan: plan,
-        created_at: new Date().toISOString()
-      }
-    });
-
-    console.log('✅ Stripe session created:', session.id);
-    console.log('Redirect URL:', session.url);
-
-    res.json({ 
+    // Return safe defaults
+    res.json({
       success: true,
-      url: session.url,
-      session_id: session.id 
-    });
-
-  } catch (error) {
-    console.error('❌ Stripe checkout error:', error);
-    res.status(500).json({ 
-      success: false,
-      error: 'Failed to create checkout session',
-      details: error.message
+      usageInfo: {
+        currentUsage: 0,
+        freeLimit: 5,
+        remainingFree: 5,
+        requiresPayment: false
+      },
+      error: error.message,
+      note: 'Returned default values due to error'
     });
   }
 });
 
-// SUCCESS PAGE
-app.get('/success', (req, res) => {
-  const sessionId = req.query.session_id;
-  console.log('✅ Payment successful, session:', sessionId);
-
-  res.send(`
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Payment Success - Show Notes Generator</title>
-        <style>
-            body { 
-                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
-                text-align: center; 
-                padding: 50px 20px; 
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                min-height: 100vh;
-                margin: 0;
-                color: white;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            }
-            .success-container {
-                background: white;
-                color: #333;
-                padding: 60px 40px;
-                border-radius: 20px;
-                max-width: 600px;
-                margin: 0 auto;
-                box-shadow: 0 20px 40px rgba(0,0,0,0.15);
-            }
-            .success-icon {
-                font-size: 4rem;
-                margin-bottom: 20px;
-            }
-            .title {
-                font-size: 2.5rem;
-                font-weight: 700;
-                margin-bottom: 20px;
-                color: #333;
-            }
-            .message {
-                font-size: 1.2rem;
-                color: #666;
-                margin-bottom: 30px;
-                line-height: 1.6;
-            }
-            .session-info {
-                background: #f8f9fa;
-                padding: 15px;
-                border-radius: 8px;
-                margin-bottom: 30px;
-                font-size: 0.9rem;
-                color: #666;
-            }
-            .btn {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white; 
-                padding: 15px 30px; 
-                text-decoration: none; 
-                border-radius: 10px;
-                display: inline-block;
-                margin-top: 20px;
-                font-weight: 600;
-                font-size: 1.1rem;
-                transition: all 0.3s ease;
-            }
-            .btn:hover { 
-                transform: translateY(-2px);
-                box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
-            }
-            .features {
-                text-align: left;
-                background: #f8f9fa;
-                padding: 20px;
-                border-radius: 10px;
-                margin: 20px 0;
-            }
-            .features h4 {
-                margin-bottom: 15px;
-                color: #333;
-            }
-            .features ul {
-                list-style: none;
-                padding: 0;
-            }
-            .features li {
-                padding: 5px 0;
-                color: #666;
-                position: relative;
-                padding-left: 25px;
-            }
-            .features li:before {
-                content: "✓";
-                position: absolute;
-                left: 0;
-                color: #4CAF50;
-                font-weight: bold;
-            }
-        </style>
-    </head>
-    <body>
-        <div class="success-container">
-            <div class="success-icon">🎉</div>
-            <h1 class="title">Welcome to Premium!</h1>
-            <p class="message">Your payment was successful! You now have unlimited access to our show notes generator with all premium features.</p>
-
-            <div class="features">
-                <h4>What you get:</h4>
-                <ul>
-                    <li>Unlimited show notes generation</li>
-                    <li>All tone and format options</li>
-                    <li>Social media snippets</li>
-                    <li>Priority support</li>
-                    <li>Advanced formatting options</li>
-                </ul>
-            </div>
-
-            <div class="session-info">
-                <strong>Order Details:</strong><br>
-                Session ID: ${sessionId || 'N/A'}<br>
-                Date: ${new Date().toLocaleDateString()}
-            </div>
-
-            <a href="/" class="btn">Start Creating Show Notes</a>
-        </div>
-    </body>
-    </html>
-  `);
-});
-
-// CANCEL PAGE  
-app.get('/cancel', (req, res) => {
-  console.log('❌ Payment cancelled by user');
-  // Redirect back to upgrade page
-  res.redirect('/upgrade');
-});
-
-// FIXED: Main generation endpoint with proper usage limiting and redirect
+// FIXED: Main generation endpoint with better usage tracking
 app.post('/api/generate', async (req, res) => {
   console.log('🤖 Generate endpoint called');
 
   try {
     const { transcript, tone, contentType } = req.body;
+    const userIP = getUserIP(req);
 
-    // Get user identifier
-    const userIP = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'] || 'unknown';
-    console.log('User IP:', userIP);
-
-    // FIXED: Get current usage count FIRST
-    const currentUsage = await getUserUsage(userIP);
-    console.log(`User ${userIP} current usage: ${currentUsage}`);
-
-    // FIXED: Check if user has ALREADY exceeded free limit (check BEFORE incrementing)
-    if (currentUsage >= 5) {
-      console.log('❌ User exceeded free limit, payment required');
-      return res.status(429).json({
-        success: false,
-        error: 'FREE_LIMIT_EXCEEDED',
-        message: 'You have used all 5 free show note generations. Upgrade for unlimited access!',
-        usageCount: currentUsage,
-        freeLimit: 5,
-        remainingFree: 0,
-        requiresPayment: true,
-        redirectTo: '/upgrade',  // NEW: Tell frontend to redirect
-        upgradeMessage: 'Get unlimited generations with our paid plans starting at just €5/month',
-        upgradeOptions: {
-          creator: {
-            price: '€5/month',
-            features: ['Unlimited generations', 'Priority support', 'Advanced formatting']
-          },
-          pro: {
-            price: '€15/month', 
-            features: ['Everything in Creator', 'Custom templates', 'API access', 'White-label options']
-          }
-        }
-      });
-    }
+    console.log(`🤖 Generation request from IP: ${userIP}`);
 
     // Enhanced validation
     if (!transcript) {
@@ -836,23 +327,35 @@ app.post('/api/generate', async (req, res) => {
       });
     }
 
-    if (typeof transcript !== 'string') {
-      return res.status(400).json({
-        success: false,
-        error: 'Transcript must be a string'
-      });
-    }
-
-    if (transcript.trim().length < 10) {
+    if (typeof transcript !== 'string' || transcript.trim().length < 10) {
       return res.status(400).json({
         success: false,
         error: 'Please provide a transcript with at least 10 characters'
       });
     }
 
-    // FIXED: Increment usage count AFTER validation and limit check
+    // Get current usage count BEFORE incrementing
+    const currentUsage = await getUserUsage(userIP);
+    console.log(`🔍 Pre-generation usage check for ${userIP}: ${currentUsage}/5`);
+
+    // Check if user has exceeded free limit
+    if (currentUsage >= 5) {
+      console.log(`❌ User ${userIP} exceeded free limit (${currentUsage}/5)`);
+      return res.status(429).json({
+        success: false,
+        error: 'FREE_LIMIT_EXCEEDED',
+        message: 'You have used all 5 free show note generations. Upgrade for unlimited access!',
+        usageCount: currentUsage,
+        freeLimit: 5,
+        remainingFree: 0,
+        requiresPayment: true,
+        redirectTo: '/upgrade'
+      });
+    }
+
+    // Increment usage count AFTER validation and limit check
     const newUsageCount = await incrementUserUsage(userIP);
-    console.log(`✅ Usage updated: ${userIP} now has ${newUsageCount} uses`);
+    console.log(`✅ Usage incremented for ${userIP}: ${currentUsage} → ${newUsageCount}`);
 
     // Generate mock show notes
     const mockShowNotes = generateMockShowNotes(transcript, tone || 'casual', contentType || 'show-notes');
@@ -877,11 +380,12 @@ app.post('/api/generate', async (req, res) => {
       metadata: {
         tone: tone || 'casual',
         contentType: contentType || 'show-notes',
-        generated_at: new Date().toISOString()
+        generated_at: new Date().toISOString(),
+        userIP: userIP // For debugging
       }
     };
 
-    console.log('✅ Generation successful, remaining free uses:', 5 - newUsageCount);
+    console.log(`✅ Generation successful for ${userIP}. Remaining: ${5 - newUsageCount}`);
     res.json(response);
 
   } catch (error) {
@@ -894,15 +398,469 @@ app.post('/api/generate', async (req, res) => {
   }
 });
 
+// STRIPE CHECKOUT ENDPOINT
+app.post('/create-checkout-session', async (req, res) => {
+  console.log('💳 Stripe checkout session requested');
+
+  if (!stripe) {
+    return res.status(500).json({
+      success: false,
+      error: 'Stripe not configured. Please set STRIPE_SECRET_KEY environment variable.'
+    });
+  }
+
+  try {
+    const { plan } = req.body;
+    console.log('Plan requested:', plan);
+
+    const plans = {
+      creator: {
+        price_id: process.env.STRIPE_CREATOR_PRICE_ID || "price_1RyHyIDF11JZQS5lv1GdG3Ef",
+        name: 'Creator Plan - €5/month'
+      },
+      pro: {
+        price_id: process.env.STRIPE_PRO_PRICE_ID || 'price_1RyI0IDF11JZQS5l914rSyO0',
+        name: 'Pro Plan - €15/month'
+      }
+    };
+
+    if (!plans[plan]) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Invalid plan selected' 
+      });
+    }
+
+    const baseUrl = req.headers.origin || `${req.protocol}://${req.get('host')}`;
+    console.log('Base URL for redirects:', baseUrl);
+
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price: plans[plan].price_id,
+          quantity: 1,
+        },
+      ],
+      mode: 'subscription',
+      success_url: `${baseUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${baseUrl}/upgrade`,
+      metadata: {
+        plan: plan,
+        created_at: new Date().toISOString()
+      }
+    });
+
+    console.log('✅ Stripe session created:', session.id);
+
+    res.json({ 
+      success: true,
+      url: session.url,
+      session_id: session.id 
+    });
+
+  } catch (error) {
+    console.error('❌ Stripe checkout error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to create checkout session',
+      details: error.message
+    });
+  }
+});
+
+// Upgrade page route - keep existing implementation
+app.get('/upgrade', (req, res) => {
+  console.log('💳 Upgrade page requested');
+  // [Previous upgrade page HTML code stays the same]
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upgrade to Premium - Show Notes Generator</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 800px;
+            width: 100%;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+            text-align: center;
+        }
+        .title {
+            color: #333;
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+        .subtitle {
+            color: #666;
+            font-size: 1.2rem;
+            margin-bottom: 40px;
+        }
+        .limit-message {
+            background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 40px;
+            font-size: 1.1rem;
+        }
+        .plans {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 40px;
+        }
+        @media (max-width: 768px) {
+            .plans { grid-template-columns: 1fr; }
+            .title { font-size: 2rem; }
+        }
+        .plan {
+            border: 2px solid #e0e0e0;
+            border-radius: 15px;
+            padding: 30px;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+        .plan:hover {
+            border-color: #667eea;
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.15);
+        }
+        .plan.popular {
+            border-color: #667eea;
+            transform: scale(1.05);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.2);
+        }
+        .popular-badge {
+            position: absolute;
+            top: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #667eea;
+            color: white;
+            padding: 5px 15px;
+            border-radius: 15px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        .plan-name {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        .plan-price {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+        .plan-features {
+            list-style: none;
+            margin-bottom: 30px;
+        }
+        .plan-features li {
+            padding: 8px 0;
+            color: #666;
+            position: relative;
+            padding-left: 25px;
+        }
+        .plan-features li:before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .back-link {
+            color: #667eea;
+            text-decoration: none;
+            margin-top: 20px;
+            display: inline-block;
+            font-weight: 500;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        .loading {
+            display: none;
+            color: #667eea;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="title">Upgrade to Premium</h1>
+        <p class="subtitle">Unlock unlimited show notes generation</p>
+
+        <div class="limit-message">
+            <strong>You've reached your free limit!</strong><br>
+            You've used all 5 free generations. Choose a plan to continue creating amazing show notes.
+        </div>
+
+        <div class="plans">
+            <div class="plan">
+                <h3 class="plan-name">Creator Plan</h3>
+                <div class="plan-price">€5<span style="font-size: 1rem; font-weight: 400;">/month</span></div>
+                <ul class="plan-features">
+                    <li>Unlimited show notes generation</li>
+                    <li>All tone options</li>
+                    <li>Social media snippets</li>
+                    <li>Priority support</li>
+                    <li>Advanced formatting</li>
+                </ul>
+                <button class="btn" onclick="subscribeToPlan('creator')" id="creator-btn">
+                    Choose Creator Plan
+                </button>
+            </div>
+
+            <div class="plan popular">
+                <div class="popular-badge">Most Popular</div>
+                <h3 class="plan-name">Pro Plan</h3>
+                <div class="plan-price">€15<span style="font-size: 1rem; font-weight: 400;">/month</span></div>
+                <ul class="plan-features">
+                    <li>Everything in Creator</li>
+                    <li>Custom templates</li>
+                    <li>API access</li>
+                    <li>White-label options</li>
+                    <li>Priority processing</li>
+                    <li>Advanced analytics</li>
+                </ul>
+                <button class="btn" onclick="subscribeToPlan('pro')" id="pro-btn">
+                    Choose Pro Plan
+                </button>
+            </div>
+        </div>
+
+        <p class="loading" id="loading">Creating secure checkout session...</p>
+
+        <a href="/" class="back-link">← Back to Generator</a>
+    </div>
+
+    <script>
+        async function subscribeToPlan(plan) {
+            console.log('Subscribing to plan:', plan);
+
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById(plan + '-btn').disabled = true;
+            document.getElementById(plan + '-btn').textContent = 'Processing...';
+
+            try {
+                const response = await fetch('/create-checkout-session', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ plan: plan })
+                });
+
+                const data = await response.json();
+                console.log('Checkout response:', data);
+
+                if (data.success && data.url) {
+                    console.log('Redirecting to:', data.url);
+                    window.location.href = data.url;
+                } else {
+                    throw new Error(data.error || 'Failed to create checkout session');
+                }
+            } catch (error) {
+                console.error('Subscription error:', error);
+                alert('Sorry, there was an error processing your request. Please try again.');
+
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById(plan + '-btn').disabled = false;
+                document.getElementById(plan + '-btn').textContent = plan === 'creator' ? 'Choose Creator Plan' : 'Choose Pro Plan';
+            }
+        }
+    </script>
+</body>
+</html>`);
+});
+
+// SUCCESS PAGE - keep existing
+app.get('/success', (req, res) => {
+  const sessionId = req.query.session_id;
+  console.log('✅ Payment successful, session:', sessionId);
+
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Success - Show Notes Generator</title>
+    <style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            text-align: center; 
+            padding: 50px 20px; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            margin: 0;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .success-container {
+            background: white;
+            color: #333;
+            padding: 60px 40px;
+            border-radius: 20px;
+            max-width: 600px;
+            margin: 0 auto;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+        }
+        .success-icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+        }
+        .title {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 20px;
+            color: #333;
+        }
+        .message {
+            font-size: 1.2rem;
+            color: #666;
+            margin-bottom: 30px;
+            line-height: 1.6;
+        }
+        .session-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            font-size: 0.9rem;
+            color: #666;
+        }
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; 
+            padding: 15px 30px; 
+            text-decoration: none; 
+            border-radius: 10px;
+            display: inline-block;
+            margin-top: 20px;
+            font-weight: 600;
+            font-size: 1.1rem;
+            transition: all 0.3s ease;
+        }
+        .btn:hover { 
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        .features {
+            text-align: left;
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        .features h4 {
+            margin-bottom: 15px;
+            color: #333;
+        }
+        .features ul {
+            list-style: none;
+            padding: 0;
+        }
+        .features li {
+            padding: 5px 0;
+            color: #666;
+            position: relative;
+            padding-left: 25px;
+        }
+        .features li:before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            color: #4CAF50;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="success-container">
+        <div class="success-icon">🎉</div>
+        <h1 class="title">Welcome to Premium!</h1>
+        <p class="message">Your payment was successful! You now have unlimited access to our show notes generator with all premium features.</p>
+
+        <div class="features">
+            <h4>What you get:</h4>
+            <ul>
+                <li>Unlimited show notes generation</li>
+                <li>All tone and format options</li>
+                <li>Social media snippets</li>
+                <li>Priority support</li>
+                <li>Advanced formatting options</li>
+            </ul>
+        </div>
+
+        <div class="session-info">
+            <strong>Order Details:</strong><br>
+            Session ID: ${sessionId || 'N/A'}<br>
+            Date: ${new Date().toLocaleDateString()}
+        </div>
+
+        <a href="/" class="btn">Start Creating Show Notes</a>
+    </div>
+</body>
+</html>`);
+});
+
+// CANCEL PAGE  
+app.get('/cancel', (req, res) => {
+  console.log('Payment cancelled by user');
+  res.redirect('/upgrade');
+});
+
 // Root endpoint - serve the HTML from parent directory
 app.get('/', (req, res) => {
-  console.log('📄 Serving index.html from parent directory');
+  console.log('Serving index.html from parent directory');
   const htmlPath = path.join(__dirname, '..', 'index.html');
   console.log('HTML file path:', htmlPath);
   res.sendFile(htmlPath);
 });
 
-// Enhanced mock show notes generator
+// Enhanced mock show notes generator - keep existing implementation
 function generateMockShowNotes(transcript, tone, contentType) {
   const toneStyles = {
     casual: "Hey everyone! Here's what we covered today:",
@@ -913,11 +871,9 @@ function generateMockShowNotes(transcript, tone, contentType) {
 
   const intro = toneStyles[tone] || toneStyles.casual;
 
-  // Enhanced content extraction
   const words = transcript.toLowerCase().split(/\s+/);
   const sentences = transcript.split(/[.!?]+/).filter(s => s.trim().length > 0);
 
-  // Extract key topics (longer words that appear multiple times or are particularly long)
   const wordFreq = {};
   words.forEach(word => {
     if (word.length > 4 && !['that', 'this', 'with', 'have', 'they', 'were', 'been', 'their', 'there', 'would', 'could', 'should'].includes(word)) {
@@ -930,7 +886,6 @@ function generateMockShowNotes(transcript, tone, contentType) {
     .slice(0, 5)
     .map(([word]) => word.charAt(0).toUpperCase() + word.slice(1));
 
-  // Get a meaningful quote (first complete sentence that's not too short)
   const meaningfulQuote = sentences.find(s => s.trim().length > 20 && s.trim().length < 150) || sentences[0] || "Key insights shared in this episode";
 
   if (contentType === 'social') {
@@ -950,7 +905,6 @@ Listen now and transform your approach! 🎧
 #podcast #business #entrepreneurship #growth #insights`;
   }
 
-  // Enhanced show notes format
   return `${intro}
 
 ## 📝 Episode Summary
@@ -1009,7 +963,7 @@ What resonated most with you from this episode? Share your thoughts and question
 
 // Error handling middleware
 app.use((error, req, res, next) => {
-  console.error('❌ Unhandled error:', error);
+  console.error('Unhandled error:', error);
   res.status(500).json({
     success: false,
     error: 'Internal server error',
@@ -1019,7 +973,7 @@ app.use((error, req, res, next) => {
 
 // 404 handler
 app.use((req, res) => {
-  console.log('❓ 404 - Route not found:', req.url);
+  console.log('404 - Route not found:', req.url);
   res.status(404).json({
     success: false,
     error: 'Route not found',
@@ -1028,12 +982,9 @@ app.use((req, res) => {
   });
 });
 
-// CRITICAL: HOST constant defined
-const HOST = '0.0.0.0';
-
 // Initialize database and start server
 async function startServer() {
-  await initDB(); // Initialize MongoDB first
+  await initDB();
 
   app.listen(PORT, HOST, () => {
     console.log(`🚀 Server running successfully on ${HOST}:${PORT}`);
@@ -1042,7 +993,7 @@ async function startServer() {
     console.log(`🌐 Access your app in Replit's web view!`);
     console.log(`🔗 API endpoints available:`);
     console.log(`   GET  /api/test - Test server connection`);
-    console.log(`   GET  /api/test-mongo - Test MongoDB connection`);
+    console.log(`   GET  /api/debug-usage - Debug usage tracking (NEW)`);
     console.log(`   GET  /api/usage - Check usage count`);
     console.log(`   POST /api/generate - Generate show notes (with usage tracking)`);
     console.log(`   GET  /upgrade - Payment/upgrade page`);
@@ -1051,11 +1002,10 @@ async function startServer() {
     console.log(`   GET  /cancel - Payment cancel page (redirects to upgrade)`);
     console.log(`   GET  /health - Health check`);
     console.log(`   GET  / - Main application`);
-    console.log(`\n⚠️  IMPORTANT: Make sure index.html is in the project root directory`);
     console.log(`💳 Stripe status: ${stripe ? 'Enabled' : 'Disabled (add STRIPE_SECRET_KEY)'}`);
     console.log(`🗄️  MongoDB status: ${usersCollection ? 'Connected' : 'Disconnected (using fallback storage)'}`);
+    console.log(`\n🐛 DEBUGGING: Visit /api/debug-usage to see usage tracking details`);
   });
 }
 
-// Start the server
 startServer().catch(console.error);
