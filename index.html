@@ -138,6 +138,12 @@
                 border: 1px solid #ffeaa7;
             }
 
+            .usage-display.exceeded {
+                background: #f8d7da;
+                color: #721c24;
+                border: 1px solid #f5c6cb;
+            }
+
             .usage-display.premium {
                 background: linear-gradient(135deg, #667eea, #764ba2);
                 color: white;
@@ -261,6 +267,22 @@
                 border: 1px solid #bee5eb;
             }
 
+            .upgrade-banner {
+                background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+                color: white;
+                padding: 15px;
+                border-radius: 8px;
+                text-align: center;
+                margin-bottom: 20px;
+            }
+
+            .upgrade-banner .btn {
+                margin-top: 10px;
+                background: white;
+                color: #ff6b6b;
+                font-weight: bold;
+            }
+
             @media (max-width: 600px) {
                 .container {
                     padding: 20px;
@@ -309,7 +331,14 @@
 
                 <!-- Usage Display -->
                 <div id="usage-display" class="usage-display normal">
-                    5 free generations remaining this month
+                    Loading usage info...
+                </div>
+
+                <!-- Upgrade Banner (hidden by default) -->
+                <div id="upgrade-banner" class="upgrade-banner hidden">
+                    <h3>🛑 Free Limit Reached!</h3>
+                    <p>You've used all 5 free generations. Upgrade for unlimited access!</p>
+                    <button class="btn" onclick="window.location.href='/upgrade'">Upgrade Now</button>
                 </div>
 
                 <!-- Action Buttons -->
@@ -323,6 +352,9 @@
                     <button class="btn btn-outline" onclick="loadSample()">
                         📝 Load Sample
                     </button>
+                    <button class="btn btn-outline" onclick="refreshUsage()">
+                        🔄 Refresh Usage
+                    </button>
                 </div>
 
                 <!-- Output Area -->
@@ -333,7 +365,7 @@
         </div>
 
         <script>
-            // Show Notes Generator with Stripe Integration
+            // Show Notes Generator with Server-Side Usage Tracking
             console.log("🚀 Script loaded successfully!");
 
             // Configuration - Auto-detect URL
@@ -346,93 +378,89 @@
             const API_URL = getApiUrl();
             console.log("🔗 API URL:", API_URL);
 
-            // Simple in-memory storage
-            const storage = {
-                data: new Map(),
-                getItem: function(key) {
-                    return this.data.get(key) || null;
-                },
-                setItem: function(key, value) {
-                    this.data.set(key, value);
-                },
-                removeItem: function(key) {
-                    this.data.delete(key);
-                }
-            };
+            // Global usage state
+            let currentUsageInfo = null;
 
-            // Usage tracking system
-            class UsageTracker {
-                constructor() {
-                    this.storageKey = 'showNotesUsage';
-                    this.freeLimit = 5;
-                }
+            // Fetch usage from server
+            async function fetchUsageFromServer() {
+                try {
+                    console.log("📊 Fetching usage from server...");
+                    const response = await fetch(`${API_URL}/api/usage`);
 
-                getCurrentUsage() {
-                    const usage = storage.getItem(this.storageKey);
-                    if (!usage) {
-                        return this.createDefaultUsage();
-                    }
-                    try {
-                        return JSON.parse(usage);
-                    } catch (e) {
-                        return this.createDefaultUsage();
-                    }
-                }
-
-                createDefaultUsage() {
-                    return {
-                        count: 0,
-                        month: new Date().getMonth(),
-                        year: new Date().getFullYear(),
-                        firstUse: null,
-                        isPaid: false
-                    };
-                }
-
-                incrementUsage() {
-                    const currentMonth = new Date().getMonth();
-                    const currentYear = new Date().getFullYear();
-                    let usage = this.getCurrentUsage();
-
-                    // Reset if new month
-                    if (usage.month !== currentMonth || usage.year !== currentYear) {
-                        usage = {
-                            count: 0,
-                            month: currentMonth,
-                            year: currentYear,
-                            firstUse: usage.firstUse || new Date().toISOString(),
-                            isPaid: usage.isPaid || false
-                        };
+                    if (!response.ok) {
+                        throw new Error(`Failed to fetch usage: ${response.status}`);
                     }
 
-                    usage.count++;
-                    if (!usage.firstUse) {
-                        usage.firstUse = new Date().toISOString();
+                    const data = await response.json();
+                    console.log("📊 Server usage data:", data);
+
+                    if (data.success) {
+                        currentUsageInfo = data.usageInfo;
+                        updateUsageDisplay(data.usageInfo);
+                        return data.usageInfo;
+                    } else {
+                        throw new Error(data.error || 'Failed to get usage info');
+                    }
+                } catch (error) {
+                    console.error("❌ Failed to fetch usage:", error);
+                    // Fallback display
+                    updateUsageDisplay({
+                        currentUsage: '?',
+                        freeLimit: 5,
+                        remainingFree: '?',
+                        requiresPayment: false
+                    });
+                    return null;
+                }
+            }
+
+            // Update usage display
+            function updateUsageDisplay(usageInfo) {
+                const usageEl = document.getElementById("usage-display");
+                const upgradeEl = document.getElementById("upgrade-banner");
+                const generateBtn = document.getElementById("generateBtn");
+
+                if (!usageEl) return;
+
+                console.log("🔄 Updating usage display:", usageInfo);
+
+                if (usageInfo.requiresPayment) {
+                    // Show exceeded state
+                    usageEl.innerHTML = `❌ ${usageInfo.remainingFree} free generations remaining (Limit reached!)`;
+                    usageEl.className = "usage-display exceeded";
+
+                    // Show upgrade banner
+                    if (upgradeEl) {
+                        upgradeEl.classList.remove('hidden');
                     }
 
-                    storage.setItem(this.storageKey, JSON.stringify(usage));
-                    return usage;
-                }
-
-                canGenerate() {
-                    const usage = this.getCurrentUsage();
-                    return usage.isPaid || usage.count < this.freeLimit;
-                }
-
-                getRemainingGenerations() {
-                    const usage = this.getCurrentUsage();
-                    if (usage.isPaid) return "Unlimited";
-                    return Math.max(0, this.freeLimit - usage.count);
-                }
-
-                showUpgradePrompt() {
-                    const remaining = this.getRemainingGenerations();
-                    if (remaining === 0) {
-                        showUpgradeModal();
-                        return true;
+                    // Disable generate button
+                    if (generateBtn) {
+                        generateBtn.disabled = true;
+                        generateBtn.textContent = "Upgrade Required";
                     }
-                    return false;
+                } else {
+                    // Show normal usage
+                    usageEl.innerHTML = `✅ ${usageInfo.remainingFree} free generations remaining this month`;
+                    usageEl.className = usageInfo.remainingFree <= 2 ? "usage-display warning" : "usage-display normal";
+
+                    // Hide upgrade banner
+                    if (upgradeEl) {
+                        upgradeEl.classList.add('hidden');
+                    }
+
+                    // Enable generate button
+                    if (generateBtn) {
+                        generateBtn.disabled = false;
+                        generateBtn.textContent = "Generate Show Notes";
+                    }
                 }
+            }
+
+            // Refresh usage manually
+            async function refreshUsage() {
+                console.log("🔄 Manual usage refresh requested");
+                await fetchUsageFromServer();
             }
 
             // Export functionality
@@ -546,11 +574,10 @@
                 }
             }
 
-            // Initialize classes
-            const usageTracker = new UsageTracker();
+            // Initialize exporter
             const showNotesExporter = new ShowNotesExporter();
 
-            // Modal functions - DEFINED FIRST
+            // Modal functions
             function closeModal() {
                 const modal = document.querySelector('.upgrade-modal');
                 if (modal) {
@@ -559,7 +586,7 @@
             }
 
             function showUpgradeModal() {
-                closeModal(); // This will now work because closeModal is defined above
+                closeModal();
 
                 const modal = document.createElement('div');
                 modal.className = 'upgrade-modal';
@@ -569,8 +596,7 @@
                         <h3>🚀 Ready to unlock unlimited show notes?</h3>
                         <p>You've used all 5 free generations this month! Upgrade to continue creating amazing content.</p>
                         <div class="modal-buttons">
-                            <button class="btn btn-primary" onclick="upgradeToCreator()">Creator Plan - €9/month</button>
-                            <button class="btn btn-secondary" onclick="upgradeToPro()">Pro Plan - €15/month</button>
+                            <button class="btn btn-primary" onclick="window.location.href='/upgrade'">View Upgrade Options</button>
                             <button onclick="closeModal()" class="btn-cancel">Maybe Later</button>
                         </div>
                     </div>
@@ -579,55 +605,13 @@
                 document.body.appendChild(modal);
             }
 
-            // Stripe checkout functions
-            async function upgradeToCreator() {
-                await createCheckoutSession('creator');
-            }
-
-            async function upgradeToPro() {
-                await createCheckoutSession('pro');
-            }
-
-            async function createCheckoutSession(plan) {
-                try {
-                    console.log(`Creating checkout session for plan: ${plan}`);
-
-                    const response = await fetch(`${API_URL}/create-checkout-session`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            plan: plan
-                        })
-                    });
-
-                    if (!response.ok) {
-                        const errorText = await response.text();
-                        throw new Error(`Failed to create checkout session: ${response.status} ${errorText}`);
-                    }
-
-                    const data = await response.json();
-                    console.log('Checkout session created:', data);
-
-                    if (data.url) {
-                        window.location.href = data.url;
-                    } else {
-                        throw new Error('No checkout URL received from server');
-                    }
-
-                } catch (error) {
-                    console.error('Checkout failed:', error);
-                    alert(`Failed to start checkout: ${error.message}`);
-                }
-            }
-
             // Main generation function
             async function generateShowNotes() {
                 console.log("🤖 Starting show notes generation...");
 
-                if (!usageTracker.canGenerate()) {
-                    usageTracker.showUpgradePrompt();
+                // Check current usage first
+                if (currentUsageInfo && currentUsageInfo.requiresPayment) {
+                    showUpgradeModal();
                     return;
                 }
 
@@ -676,6 +660,43 @@
 
                     console.log("Response status:", response.status);
 
+                    if (response.status === 429) {
+                        // Handle usage limit exceeded
+                        const errorData = await response.json();
+                        console.log("Usage limit exceeded:", errorData);
+
+                        // Update usage display
+                        if (errorData.usageCount !== undefined) {
+                            updateUsageDisplay({
+                                currentUsage: errorData.usageCount,
+                                freeLimit: errorData.freeLimit || 5,
+                                remainingFree: 0,
+                                requiresPayment: true
+                            });
+                        }
+
+                        // Show upgrade modal or redirect
+                        if (errorData.redirectTo === '/upgrade') {
+                            showUpgradeModal();
+                        } else {
+                            showUpgradeModal();
+                        }
+
+                        if (outputDiv) {
+                            outputDiv.innerHTML = `
+                                <div class="error">
+                                    <h3>🛑 Free Limit Reached</h3>
+                                    <p><strong>${errorData.message || 'You have used all 5 free generations.'}</strong></p>
+                                    <p>Upgrade to continue creating amazing show notes!</p>
+                                    <button class="btn btn-primary" onclick="window.location.href='/upgrade'" style="margin-top: 15px;">
+                                        View Upgrade Options
+                                    </button>
+                                </div>
+                            `;
+                        }
+                        return;
+                    }
+
                     if (!response.ok) {
                         const errorText = await response.text();
                         console.error("Server error response:", errorText);
@@ -686,8 +707,11 @@
                     console.log("API response:", data);
 
                     if (data.success && data.content) {
-                        const usage = usageTracker.incrementUsage();
-                        updateUsageDisplay(usage);
+                        // Update usage info if provided
+                        if (data.usageInfo) {
+                            currentUsageInfo = data.usageInfo;
+                            updateUsageDisplay(data.usageInfo);
+                        }
 
                         if (outputDiv) {
                             outputDiv.innerHTML = `
@@ -719,26 +743,6 @@
                         generateButton.disabled = false;
                         generateButton.textContent = "Generate Show Notes";
                     }
-                }
-            }
-
-            // UI Updates
-            function updateUsageDisplay(usage) {
-                const remaining = usageTracker.getRemainingGenerations();
-                let usageEl = document.getElementById("usage-display");
-
-                if (!usageEl) {
-                    usageEl = document.createElement("div");
-                    usageEl.id = "usage-display";
-                    usageEl.className = "usage-display";
-                }
-
-                if (usage && usage.isPaid) {
-                    usageEl.innerHTML = "✨ Unlimited generations";
-                    usageEl.className = "usage-display premium";
-                } else {
-                    usageEl.innerHTML = `${remaining} free generations remaining this month`;
-                    usageEl.className = remaining <= 2 ? "usage-display warning" : "usage-display normal";
                 }
             }
 
@@ -781,9 +785,11 @@
             }
 
             // Initialize on page load
-            function initializeApp() {
+            async function initializeApp() {
                 console.log("🚀 Initializing Show Notes Generator...");
-                updateUsageDisplay(usageTracker.getCurrentUsage());
+
+                // Fetch current usage from server
+                await fetchUsageFromServer();
 
                 const generateBtn = document.getElementById("generateBtn");
                 if (generateBtn) {

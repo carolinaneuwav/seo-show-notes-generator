@@ -174,6 +174,9 @@ app.use((req, res, next) => {
   next();
 });
 
+// CRITICAL: Define PORT before using it
+const PORT = process.env.PORT || 3000;
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({
@@ -187,6 +190,255 @@ app.get('/health', (req, res) => {
     stripe_enabled: !!stripe,
     mongodb_connected: !!usersCollection
   });
+});
+
+// NEW: Payment page route
+app.get('/upgrade', (req, res) => {
+  console.log('💳 Upgrade page requested');
+
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Upgrade to Premium - Show Notes Generator</title>
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { 
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                padding: 20px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            .container {
+                background: white;
+                border-radius: 20px;
+                padding: 40px;
+                max-width: 800px;
+                width: 100%;
+                box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+                text-align: center;
+            }
+            .title {
+                color: #333;
+                font-size: 2.5rem;
+                margin-bottom: 10px;
+                font-weight: 700;
+            }
+            .subtitle {
+                color: #666;
+                font-size: 1.2rem;
+                margin-bottom: 40px;
+            }
+            .limit-message {
+                background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+                color: white;
+                padding: 20px;
+                border-radius: 10px;
+                margin-bottom: 40px;
+                font-size: 1.1rem;
+            }
+            .plans {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 30px;
+                margin-bottom: 40px;
+            }
+            @media (max-width: 768px) {
+                .plans { grid-template-columns: 1fr; }
+                .title { font-size: 2rem; }
+            }
+            .plan {
+                border: 2px solid #e0e0e0;
+                border-radius: 15px;
+                padding: 30px;
+                transition: all 0.3s ease;
+                position: relative;
+            }
+            .plan:hover {
+                border-color: #667eea;
+                transform: translateY(-5px);
+                box-shadow: 0 10px 25px rgba(102, 126, 234, 0.15);
+            }
+            .plan.popular {
+                border-color: #667eea;
+                transform: scale(1.05);
+                box-shadow: 0 10px 25px rgba(102, 126, 234, 0.2);
+            }
+            .popular-badge {
+                position: absolute;
+                top: -10px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: #667eea;
+                color: white;
+                padding: 5px 15px;
+                border-radius: 15px;
+                font-size: 0.8rem;
+                font-weight: 600;
+            }
+            .plan-name {
+                font-size: 1.5rem;
+                font-weight: 600;
+                color: #333;
+                margin-bottom: 10px;
+            }
+            .plan-price {
+                font-size: 2rem;
+                font-weight: 700;
+                color: #667eea;
+                margin-bottom: 20px;
+            }
+            .plan-features {
+                list-style: none;
+                margin-bottom: 30px;
+            }
+            .plan-features li {
+                padding: 8px 0;
+                color: #666;
+                position: relative;
+                padding-left: 25px;
+            }
+            .plan-features li:before {
+                content: "✓";
+                position: absolute;
+                left: 0;
+                color: #4CAF50;
+                font-weight: bold;
+            }
+            .btn {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 15px 30px;
+                border: none;
+                border-radius: 8px;
+                font-size: 1rem;
+                font-weight: 600;
+                cursor: pointer;
+                width: 100%;
+                transition: all 0.3s ease;
+                text-decoration: none;
+                display: inline-block;
+            }
+            .btn:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+            }
+            .btn:disabled {
+                opacity: 0.6;
+                cursor: not-allowed;
+            }
+            .back-link {
+                color: #667eea;
+                text-decoration: none;
+                margin-top: 20px;
+                display: inline-block;
+                font-weight: 500;
+            }
+            .back-link:hover {
+                text-decoration: underline;
+            }
+            .loading {
+                display: none;
+                color: #667eea;
+                font-weight: 500;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1 class="title">🚀 Upgrade to Premium</h1>
+            <p class="subtitle">Unlock unlimited show notes generation</p>
+
+            <div class="limit-message">
+                <strong>🛑 You've reached your free limit!</strong><br>
+                You've used all 5 free generations. Choose a plan to continue creating amazing show notes.
+            </div>
+
+            <div class="plans">
+                <div class="plan">
+                    <h3 class="plan-name">Creator Plan</h3>
+                    <div class="plan-price">€5<span style="font-size: 1rem; font-weight: 400;">/month</span></div>
+                    <ul class="plan-features">
+                        <li>Unlimited show notes generation</li>
+                        <li>All tone options</li>
+                        <li>Social media snippets</li>
+                        <li>Priority support</li>
+                        <li>Advanced formatting</li>
+                    </ul>
+                    <button class="btn" onclick="subscribeToPlan('creator')" id="creator-btn">
+                        Choose Creator Plan
+                    </button>
+                </div>
+
+                <div class="plan popular">
+                    <div class="popular-badge">Most Popular</div>
+                    <h3 class="plan-name">Pro Plan</h3>
+                    <div class="plan-price">€15<span style="font-size: 1rem; font-weight: 400;">/month</span></div>
+                    <ul class="plan-features">
+                        <li>Everything in Creator</li>
+                        <li>Custom templates</li>
+                        <li>API access</li>
+                        <li>White-label options</li>
+                        <li>Priority processing</li>
+                        <li>Advanced analytics</li>
+                    </ul>
+                    <button class="btn" onclick="subscribeToPlan('pro')" id="pro-btn">
+                        Choose Pro Plan
+                    </button>
+                </div>
+            </div>
+
+            <p class="loading" id="loading">Creating secure checkout session...</p>
+
+            <a href="/" class="back-link">← Back to Generator</a>
+        </div>
+
+        <script>
+            async function subscribeToPlan(plan) {
+                console.log('Subscribing to plan:', plan);
+
+                // Show loading state
+                document.getElementById('loading').style.display = 'block';
+                document.getElementById(plan + '-btn').disabled = true;
+                document.getElementById(plan + '-btn').textContent = 'Processing...';
+
+                try {
+                    const response = await fetch('/create-checkout-session', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ plan: plan })
+                    });
+
+                    const data = await response.json();
+                    console.log('Checkout response:', data);
+
+                    if (data.success && data.url) {
+                        console.log('Redirecting to:', data.url);
+                        window.location.href = data.url;
+                    } else {
+                        throw new Error(data.error || 'Failed to create checkout session');
+                    }
+                } catch (error) {
+                    console.error('Subscription error:', error);
+                    alert('Sorry, there was an error processing your request. Please try again.');
+
+                    // Reset button state
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById(plan + '-btn').disabled = false;
+                    document.getElementById(plan + '-btn').textContent = plan === 'creator' ? 'Choose Creator Plan' : 'Choose Pro Plan';
+                }
+            }
+        </script>
+    </body>
+    </html>
+  `);
 });
 
 // ADDED: MongoDB connection test endpoint
@@ -326,6 +578,7 @@ app.post('/create-checkout-session', async (req, res) => {
 
   if (!stripe) {
     return res.status(500).json({
+      success: false,
       error: 'Stripe not configured. Please set STRIPE_SECRET_KEY environment variable.'
     });
   }
@@ -347,7 +600,10 @@ app.post('/create-checkout-session', async (req, res) => {
     };
 
     if (!plans[plan]) {
-      return res.status(400).json({ error: 'Invalid plan selected' });
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Invalid plan selected' 
+      });
     }
 
     // Get the base URL for redirects
@@ -364,7 +620,7 @@ app.post('/create-checkout-session', async (req, res) => {
       ],
       mode: 'subscription',
       success_url: `${baseUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${baseUrl}/cancel`,
+      cancel_url: `${baseUrl}/upgrade`,  // Return to upgrade page on cancel
       metadata: {
         plan: plan,
         created_at: new Date().toISOString()
@@ -383,9 +639,9 @@ app.post('/create-checkout-session', async (req, res) => {
   } catch (error) {
     console.error('❌ Stripe checkout error:', error);
     res.status(500).json({ 
+      success: false,
       error: 'Failed to create checkout session',
-      details: error.message,
-      success: false
+      details: error.message
     });
   }
 });
@@ -396,50 +652,130 @@ app.get('/success', (req, res) => {
   console.log('✅ Payment successful, session:', sessionId);
 
   res.send(`
-    <html>
-      <head>
-        <title>Payment Success - Show Notes Generator</title>
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Payment Success - Show Notes Generator</title>
         <style>
-          body { 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
-            text-align: center; 
-            padding: 50px 20px; 
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            margin: 0;
-            color: white;
-          }
-          .success-container {
-            background: white;
-            color: #333;
-            padding: 40px;
-            border-radius: 15px;
-            max-width: 500px;
-            margin: 0 auto;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-          }
-          .btn {
-            background: #667eea; 
-            color: white; 
-            padding: 12px 24px; 
-            text-decoration: none; 
-            border-radius: 8px;
-            display: inline-block;
-            margin-top: 20px;
-            font-weight: 600;
-          }
-          .btn:hover { background: #5a6fd8; }
+            body { 
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+                text-align: center; 
+                padding: 50px 20px; 
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                margin: 0;
+                color: white;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            .success-container {
+                background: white;
+                color: #333;
+                padding: 60px 40px;
+                border-radius: 20px;
+                max-width: 600px;
+                margin: 0 auto;
+                box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+            }
+            .success-icon {
+                font-size: 4rem;
+                margin-bottom: 20px;
+            }
+            .title {
+                font-size: 2.5rem;
+                font-weight: 700;
+                margin-bottom: 20px;
+                color: #333;
+            }
+            .message {
+                font-size: 1.2rem;
+                color: #666;
+                margin-bottom: 30px;
+                line-height: 1.6;
+            }
+            .session-info {
+                background: #f8f9fa;
+                padding: 15px;
+                border-radius: 8px;
+                margin-bottom: 30px;
+                font-size: 0.9rem;
+                color: #666;
+            }
+            .btn {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white; 
+                padding: 15px 30px; 
+                text-decoration: none; 
+                border-radius: 10px;
+                display: inline-block;
+                margin-top: 20px;
+                font-weight: 600;
+                font-size: 1.1rem;
+                transition: all 0.3s ease;
+            }
+            .btn:hover { 
+                transform: translateY(-2px);
+                box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+            }
+            .features {
+                text-align: left;
+                background: #f8f9fa;
+                padding: 20px;
+                border-radius: 10px;
+                margin: 20px 0;
+            }
+            .features h4 {
+                margin-bottom: 15px;
+                color: #333;
+            }
+            .features ul {
+                list-style: none;
+                padding: 0;
+            }
+            .features li {
+                padding: 5px 0;
+                color: #666;
+                position: relative;
+                padding-left: 25px;
+            }
+            .features li:before {
+                content: "✓";
+                position: absolute;
+                left: 0;
+                color: #4CAF50;
+                font-weight: bold;
+            }
         </style>
-      </head>
-      <body>
+    </head>
+    <body>
         <div class="success-container">
-          <h1>🎉 Welcome to Premium!</h1>
-          <p>Your payment was successful! You now have unlimited access to our show notes generator.</p>
-          <p><small>Session ID: ${sessionId || 'N/A'}</small></p>
-          <a href="/" class="btn">Start Creating Show Notes</a>
+            <div class="success-icon">🎉</div>
+            <h1 class="title">Welcome to Premium!</h1>
+            <p class="message">Your payment was successful! You now have unlimited access to our show notes generator with all premium features.</p>
+
+            <div class="features">
+                <h4>What you get:</h4>
+                <ul>
+                    <li>Unlimited show notes generation</li>
+                    <li>All tone and format options</li>
+                    <li>Social media snippets</li>
+                    <li>Priority support</li>
+                    <li>Advanced formatting options</li>
+                </ul>
+            </div>
+
+            <div class="session-info">
+                <strong>Order Details:</strong><br>
+                Session ID: ${sessionId || 'N/A'}<br>
+                Date: ${new Date().toLocaleDateString()}
+            </div>
+
+            <a href="/" class="btn">Start Creating Show Notes</a>
         </div>
-      </body>
+    </body>
     </html>
   `);
 });
@@ -447,57 +783,11 @@ app.get('/success', (req, res) => {
 // CANCEL PAGE  
 app.get('/cancel', (req, res) => {
   console.log('❌ Payment cancelled by user');
-
-  res.send(`
-    <html>
-      <head>
-        <title>Payment Cancelled - Show Notes Generator</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <style>
-          body { 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
-            text-align: center; 
-            padding: 50px 20px; 
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            margin: 0;
-            color: white;
-          }
-          .cancel-container {
-            background: white;
-            color: #333;
-            padding: 40px;
-            border-radius: 15px;
-            max-width: 500px;
-            margin: 0 auto;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-          }
-          .btn {
-            background: #667eea; 
-            color: white; 
-            padding: 12px 24px; 
-            text-decoration: none; 
-            border-radius: 8px;
-            display: inline-block;
-            margin-top: 20px;
-            font-weight: 600;
-          }
-          .btn:hover { background: #5a6fd8; }
-        </style>
-      </head>
-      <body>
-        <div class="cancel-container">
-          <h1>Payment Cancelled</h1>
-          <p>No problem! You can always upgrade later when you're ready.</p>
-          <p>You still have access to your free generations for this month.</p>
-          <a href="/" class="btn">Back to Generator</a>
-        </div>
-      </body>
-    </html>
-  `);
+  // Redirect back to upgrade page
+  res.redirect('/upgrade');
 });
 
-// FIXED: Main generation endpoint with proper usage limiting
+// FIXED: Main generation endpoint with proper usage limiting and redirect
 app.post('/api/generate', async (req, res) => {
   console.log('🤖 Generate endpoint called');
 
@@ -518,9 +808,23 @@ app.post('/api/generate', async (req, res) => {
       return res.status(429).json({
         success: false,
         error: 'FREE_LIMIT_EXCEEDED',
-        message: 'You have used your 5 free generations. Please upgrade to continue.',
+        message: 'You have used all 5 free show note generations. Upgrade for unlimited access!',
         usageCount: currentUsage,
-        freeLimit: 5
+        freeLimit: 5,
+        remainingFree: 0,
+        requiresPayment: true,
+        redirectTo: '/upgrade',  // NEW: Tell frontend to redirect
+        upgradeMessage: 'Get unlimited generations with our paid plans starting at just €5/month',
+        upgradeOptions: {
+          creator: {
+            price: '€5/month',
+            features: ['Unlimited generations', 'Priority support', 'Advanced formatting']
+          },
+          pro: {
+            price: '€15/month', 
+            features: ['Everything in Creator', 'Custom templates', 'API access', 'White-label options']
+          }
+        }
       });
     }
 
@@ -724,8 +1028,7 @@ app.use((req, res) => {
   });
 });
 
-// CRITICAL: Replit requires specific port and host configuration
-const PORT = process.env.PORT || 3000;
+// CRITICAL: HOST constant defined
 const HOST = '0.0.0.0';
 
 // Initialize database and start server
@@ -742,9 +1045,10 @@ async function startServer() {
     console.log(`   GET  /api/test-mongo - Test MongoDB connection`);
     console.log(`   GET  /api/usage - Check usage count`);
     console.log(`   POST /api/generate - Generate show notes (with usage tracking)`);
+    console.log(`   GET  /upgrade - Payment/upgrade page`);
     console.log(`   POST /create-checkout-session - Create Stripe checkout`);
     console.log(`   GET  /success - Payment success page`);
-    console.log(`   GET  /cancel - Payment cancel page`);
+    console.log(`   GET  /cancel - Payment cancel page (redirects to upgrade)`);
     console.log(`   GET  /health - Health check`);
     console.log(`   GET  / - Main application`);
     console.log(`\n⚠️  IMPORTANT: Make sure index.html is in the project root directory`);
