@@ -4,6 +4,16 @@
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>🚀 SEO Show Notes Generator MVP</title>
+        
+        <!-- Google Analytics 4 -->
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-KQS2633MB0"></script>
+        <script>
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);}
+            gtag('js', new Date());
+            gtag('config', 'G-KQS2633MB0');
+        </script>
+        
         <style>
             /* Hide elements by default */
             .hidden {
@@ -338,7 +348,7 @@
                 <div id="upgrade-banner" class="upgrade-banner hidden">
                     <h3>🛑 Free Limit Reached!</h3>
                     <p>You've used all 5 free generations. Upgrade for unlimited access!</p>
-                    <button class="btn" onclick="window.location.href='/upgrade'">Upgrade Now</button>
+                    <button class="btn" onclick="handleUpgradeClick()">Upgrade Now - $9/month</button>
                 </div>
 
                 <!-- Action Buttons -->
@@ -365,8 +375,24 @@
         </div>
 
         <script>
-            // Show Notes Generator with Server-Side Usage Tracking
+            // Show Notes Generator with Google Analytics Tracking
             console.log("🚀 Script loaded successfully!");
+
+            // Google Analytics tracking functions
+            function trackEvent(eventName, parameters = {}) {
+                if (typeof gtag === 'function') {
+                    console.log('📊 GA Event:', eventName, parameters);
+                    gtag('event', eventName, parameters);
+                } else {
+                    console.log('📊 GA not loaded, would track:', eventName, parameters);
+                }
+            }
+
+            // Track page view
+            trackEvent('page_view', {
+                page_title: '🚀 SEO Show Notes Generator MVP',
+                page_location: window.location.href
+            });
 
             // Configuration - Auto-detect URL
             const getApiUrl = () => {
@@ -385,6 +411,8 @@
             async function fetchUsageFromServer() {
                 try {
                     console.log("📊 Fetching usage from server...");
+                    trackEvent('usage_check_started');
+                    
                     const response = await fetch(`${API_URL}/api/usage`);
 
                     if (!response.ok) {
@@ -397,12 +425,21 @@
                     if (data.success) {
                         currentUsageInfo = data.usageInfo;
                         updateUsageDisplay(data.usageInfo);
+                        
+                        // Track usage info
+                        trackEvent('usage_info_loaded', {
+                            remaining_free: data.usageInfo.remainingFree,
+                            requires_payment: data.usageInfo.requiresPayment
+                        });
+                        
                         return data.usageInfo;
                     } else {
                         throw new Error(data.error || 'Failed to get usage info');
                     }
                 } catch (error) {
                     console.error("❌ Failed to fetch usage:", error);
+                    trackEvent('usage_check_failed', { error: error.message });
+                    
                     // Fallback display
                     updateUsageDisplay({
                         currentUsage: '?',
@@ -432,6 +469,9 @@
                     // Show upgrade banner
                     if (upgradeEl) {
                         upgradeEl.classList.remove('hidden');
+                        trackEvent('paywall_shown', {
+                            remaining_free: usageInfo.remainingFree
+                        });
                     }
 
                     // Disable generate button
@@ -443,6 +483,13 @@
                     // Show normal usage
                     usageEl.innerHTML = `✅ ${usageInfo.remainingFree} free generations remaining this month`;
                     usageEl.className = usageInfo.remainingFree <= 2 ? "usage-display warning" : "usage-display normal";
+                    
+                    // Track low usage warning
+                    if (usageInfo.remainingFree <= 2) {
+                        trackEvent('low_usage_warning', {
+                            remaining_free: usageInfo.remainingFree
+                        });
+                    }
 
                     // Hide upgrade banner
                     if (upgradeEl) {
@@ -457,13 +504,25 @@
                 }
             }
 
+            // Handle upgrade button clicks with analytics
+            function handleUpgradeClick() {
+                trackEvent('upgrade_button_clicked', {
+                    source: 'banner',
+                    remaining_free: currentUsageInfo?.remainingFree || 0
+                });
+                
+                // Your existing upgrade logic here
+                window.location.href = '/upgrade';
+            }
+
             // Refresh usage manually
             async function refreshUsage() {
                 console.log("🔄 Manual usage refresh requested");
+                trackEvent('manual_refresh_usage');
                 await fetchUsageFromServer();
             }
 
-            // Export functionality
+            // Export functionality with analytics
             class ShowNotesExporter {
                 constructor() {
                     this.addExportButtons();
@@ -484,6 +543,9 @@
                                 </div>
                             `;
                             outputDiv.insertAdjacentHTML("beforeend", exportHTML);
+                            
+                            // Track that export options were shown
+                            trackEvent('export_options_shown');
                         }
                     });
                 }
@@ -518,6 +580,7 @@
                         alert("No show notes to export. Generate some first!");
                         return;
                     }
+                    trackEvent('export_download', { format: 'txt' });
                     this.downloadFile(showNotes, "show-notes.txt", "text/plain");
                 }
 
@@ -527,6 +590,7 @@
                         alert("No show notes to export. Generate some first!");
                         return;
                     }
+                    trackEvent('export_download', { format: 'markdown' });
                     this.downloadFile(showNotes, "show-notes.md", "text/markdown");
                 }
 
@@ -536,6 +600,8 @@
                         alert("No show notes to export. Generate some first!");
                         return;
                     }
+
+                    trackEvent('export_download', { format: 'pdf' });
 
                     try {
                         const printWindow = window.open("", "_blank");
@@ -577,16 +643,21 @@
             // Initialize exporter
             const showNotesExporter = new ShowNotesExporter();
 
-            // Modal functions
+            // Modal functions with analytics
             function closeModal() {
                 const modal = document.querySelector('.upgrade-modal');
                 if (modal) {
+                    trackEvent('upgrade_modal_closed');
                     modal.remove();
                 }
             }
 
             function showUpgradeModal() {
                 closeModal();
+                
+                trackEvent('upgrade_modal_shown', {
+                    trigger: 'limit_reached'
+                });
 
                 const modal = document.createElement('div');
                 modal.className = 'upgrade-modal';
@@ -596,7 +667,7 @@
                         <h3>🚀 Ready to unlock unlimited show notes?</h3>
                         <p>You've used all 5 free generations this month! Upgrade to continue creating amazing content.</p>
                         <div class="modal-buttons">
-                            <button class="btn btn-primary" onclick="window.location.href='/upgrade'">View Upgrade Options</button>
+                            <button class="btn btn-primary" onclick="handleModalUpgradeClick()">Upgrade Now - $9/month</button>
                             <button onclick="closeModal()" class="btn-cancel">Maybe Later</button>
                         </div>
                     </div>
@@ -605,12 +676,22 @@
                 document.body.appendChild(modal);
             }
 
-            // Main generation function
+            function handleModalUpgradeClick() {
+                trackEvent('upgrade_button_clicked', {
+                    source: 'modal',
+                    remaining_free: currentUsageInfo?.remainingFree || 0
+                });
+                window.location.href = '/upgrade';
+            }
+
+            // Main generation function with analytics
             async function generateShowNotes() {
                 console.log("🤖 Starting show notes generation...");
+                trackEvent('generate_attempt_started');
 
                 // Check current usage first
                 if (currentUsageInfo && currentUsageInfo.requiresPayment) {
+                    trackEvent('generate_blocked_by_limit');
                     showUpgradeModal();
                     return;
                 }
@@ -622,14 +703,24 @@
                 const outputDiv = document.getElementById("output");
 
                 if (!transcript || !transcript.trim()) {
+                    trackEvent('generate_failed', { reason: 'empty_transcript' });
                     alert("Please enter a transcript");
                     return;
                 }
 
                 if (transcript.trim().length < 10) {
+                    trackEvent('generate_failed', { reason: 'transcript_too_short' });
                     alert("Please enter a longer transcript (at least 10 characters)");
                     return;
                 }
+
+                // Track generation parameters
+                trackEvent('generate_started', {
+                    transcript_length: transcript.trim().length,
+                    tone: tone,
+                    content_type: contentType,
+                    remaining_free: currentUsageInfo?.remainingFree || '?'
+                });
 
                 // Show loading state
                 if (generateButton) {
@@ -665,6 +756,11 @@
                         const errorData = await response.json();
                         console.log("Usage limit exceeded:", errorData);
 
+                        trackEvent('free_limit_reached', {
+                            usage_count: errorData.usageCount,
+                            free_limit: errorData.freeLimit || 5
+                        });
+
                         // Update usage display
                         if (errorData.usageCount !== undefined) {
                             updateUsageDisplay({
@@ -688,8 +784,8 @@
                                     <h3>🛑 Free Limit Reached</h3>
                                     <p><strong>${errorData.message || 'You have used all 5 free generations.'}</strong></p>
                                     <p>Upgrade to continue creating amazing show notes!</p>
-                                    <button class="btn btn-primary" onclick="window.location.href='/upgrade'" style="margin-top: 15px;">
-                                        View Upgrade Options
+                                    <button class="btn btn-primary" onclick="handleUpgradeClick()" style="margin-top: 15px;">
+                                        Upgrade Now - $9/month
                                     </button>
                                 </div>
                             `;
@@ -707,6 +803,12 @@
                     console.log("API response:", data);
 
                     if (data.success && data.content) {
+                        // Track successful generation
+                        trackEvent('generate_completed', {
+                            content_length: data.content.length,
+                            tokens_used: data.usage?.total_tokens || 0
+                        });
+
                         // Update usage info if provided
                         if (data.usageInfo) {
                             currentUsageInfo = data.usageInfo;
@@ -728,6 +830,11 @@
                     }
                 } catch (error) {
                     console.error("Generation failed:", error);
+                    trackEvent('generate_failed', { 
+                        error: error.message,
+                        api_url: API_URL
+                    });
+                    
                     if (outputDiv) {
                         outputDiv.innerHTML = `
                             <div class="error">
@@ -746,10 +853,12 @@
                 }
             }
 
-            // Test connection function
+            // Test connection function with analytics
             async function testConnection() {
                 try {
                     console.log("🔍 Testing connection...");
+                    trackEvent('test_connection_started');
+                    
                     const testUrl = `${API_URL}/api/test`;
                     console.log("Testing server connection to:", testUrl);
 
@@ -766,15 +875,19 @@
 
                     const data = await response.json();
                     console.log("Test successful:", data);
+                    trackEvent('test_connection_success');
                     alert("✅ Server connection works! Response: " + JSON.stringify(data, null, 2));
                 } catch (error) {
                     console.error("Test failed:", error);
+                    trackEvent('test_connection_failed', { error: error.message });
                     alert(`❌ Server connection failed: ${error.message}\nAPI URL: ${API_URL}\nCheck console for details`);
                 }
             }
 
-            // Load sample function
+            // Load sample function with analytics
             function loadSample() {
+                trackEvent('sample_loaded');
+                
                 const sampleText = `Welcome to the Indie Creator Podcast! Today we're talking about building your first online business. Many creators struggle with monetization, but the key is starting small and focusing on one revenue stream. I've helped hundreds of creators go from zero to their first thousand dollars in revenue. The biggest mistake I see is trying to do everything at once instead of mastering one thing first. Today I'll share three specific strategies that work for any creator, regardless of your niche.`;
 
                 const transcriptEl = document.getElementById("transcript");
@@ -784,27 +897,16 @@
                 }
             }
 
-            // Initialize on page load
-            async function initializeApp() {
-                console.log("🚀 Initializing Show Notes Generator...");
-
-                // Fetch current usage from server
-                await fetchUsageFromServer();
-
-                const generateBtn = document.getElementById("generateBtn");
-                if (generateBtn) {
-                    generateBtn.addEventListener('click', generateShowNotes);
-                }
-
-                console.log("✅ App initialized successfully!");
-            }
-
-            // Initialize when DOM is ready
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', initializeApp);
-            } else {
-                initializeApp();
-            }
-        </script>
-    </body>
-</html>
+            // Track form interactions
+            function trackFormInteractions() {
+                const transcriptEl = document.getElementById("transcript");
+                const toneEl = document.getElementById("tone");
+                const contentTypeEl = document.getElementById("contentType");
+                
+                if (transcriptEl) {
+                    transcriptEl.addEventListener('focus', () => {
+                        trackEvent('transcript_field_focused');
+                    });
+                    
+                    transcriptEl.addEventListener('input', () => {
+                        if
